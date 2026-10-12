@@ -6,8 +6,11 @@ NICHE = "AI tools that save time and help freelancers and small businesses make 
 # Script की भाषा
 LANGUAGE = "English"
 
-# Long video: लगभग कितने minute का
-LONG_MINUTES = 9
+# Long video: कितने chapters (हर chapter = एक slide + एक हिस्सा script)
+LONG_CHAPTERS = 8
+
+# हर chapter में लगभग कितने words (8 × 200 = 1600 words ≈ 9 से 10 minute)
+LONG_WORDS_PER_CHAPTER = 200
 
 # हर run में कितनी long videos
 LONG_VIDEOS_PER_RUN = 1
