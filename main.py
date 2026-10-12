@@ -1,4 +1,4 @@
-import asyncio
+fimport asyncio
 import datetime
 import json
 import os
@@ -87,9 +87,13 @@ async def _tts(text: str, path: Path):
     communicate = edge_tts.Communicate(text, config.VOICE)
     await communicate.save(str(path))
 
-
 def make_voice(text: str, path: Path):
-    asyncio.run(_tts(text, path))
+    try:
+        asyncio.run(_tts(text, path))
+    except Exception as e:
+        print(f"   Edge TTS fail hua ({type(e).__name__}), gTTS use kar raha hoon...")
+        from gtts import gTTS
+        gTTS(text=text, lang="en", tld="com").save(str(path))
 
 
 # ---------- 3. Thumbnail (1280x720 JPG) ----------
