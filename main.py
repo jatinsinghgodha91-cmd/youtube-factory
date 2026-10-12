@@ -1,4 +1,4 @@
-fimport asyncio
+import asyncio
 import datetime
 import json
 import os
@@ -7,6 +7,7 @@ from pathlib import Path
 
 import edge_tts
 import requests
+from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont
 
 import config
@@ -48,7 +49,8 @@ def groq_json(user_prompt: str) -> dict:
         json=payload,
         timeout=180,
     )
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise SystemExit(f"Groq error {r.status_code}: {r.text}")
     return json.loads(r.json()["choices"][0]["message"]["content"])
 
 
@@ -87,12 +89,12 @@ async def _tts(text: str, path: Path):
     communicate = edge_tts.Communicate(text, config.VOICE)
     await communicate.save(str(path))
 
+
 def make_voice(text: str, path: Path):
     try:
         asyncio.run(_tts(text, path))
     except Exception as e:
         print(f"   Edge TTS fail hua ({type(e).__name__}), gTTS use kar raha hoon...")
-        from gtts import gTTS
         gTTS(text=text, lang="en", tld="com").save(str(path))
 
 
