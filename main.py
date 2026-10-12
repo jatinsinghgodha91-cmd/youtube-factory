@@ -91,15 +91,17 @@ def groq_json(user_prompt: str) -> dict:
 
 
 def build_long(history: dict) -> dict:
-    target = config.LONG_MINUTES * 150
+    count = config.LONG_CHAPTERS
+    per = config.LONG_WORDS_PER_CHAPTER
     past = history["titles"][-200:]
     avoid = "\n".join(f"- {t}" for t in past) or "- (none yet)"
 
-    prompt = f"""Niche: {config.NICHE}
+    # Step A: title, description, tags aur chapter list ka outline
+    outline_prompt = f"""Niche: {config.NICHE}
 Language: {config.LANGUAGE}
-Narration length: about {target} words (about {config.LONG_MINUTES} minutes of speech).
 
-Pick ONE specific, high-interest video topic in this niche. It must be clearly different from these past titles:
+Plan ONE long YouTube video with exactly {count} chapters.
+Pick a specific, high-interest topic in this niche. It must be clearly different from these past titles:
 {avoid}
 
 Return JSON with exactly these keys:
@@ -108,19 +110,70 @@ Return JSON with exactly these keys:
   "thumbnail_text": "3 to 5 words for the thumbnail, all caps",
   "description": "150 to 250 word YouTube description with a short summary and a subscribe call to action",
   "tags": ["15 to 20 relevant tags"],
-  "chapters": [{{"time": "0:00", "name": "chapter name"}}],
-  "narration": "the full spoken script, about {target} words, no stage directions"
+  "chapters": [{{"name": "short chapter title", "point": "one sentence: what this chapter teaches"}}]
 }}
-Use 6 to 8 chapters that split the narration into clear parts."""
+The chapters list must contain exactly {count} items."""
 
-    for attempt in range(1, 4):
-        data = groq_json(prompt)
-        check_keys(data, ["title", "thumbnail_text", "description", "tags", "chapters", "narration"])
-        words = word_count(data["narration"])
-        if words >= target * 0.8:
-            return data
-        print(f"   Long script chhoti hai ({words} words), dobara likh raha hoon... (try {attempt})")
-    return data
+    outline = groq_json(outline_prompt)
+    check_keys(outline, ["title", "thumbnail_text", "description", "tags", "chapters"])
+    chapters = [c for c in outline["chapters"] if isinstance(c, dict) and c.get("name")]
+    if not chapters:
+        raise ValueError("LLM ne chapters nahi diye")
+
+    names = [c["name"] for c in chapters]
+    names_str = " | ".join(names)
+    total = len(chapters)
+
+    # Step B: har chapter ka narration alag se likhwana
+    sections = []
+    for i, ch in enumerate(chapters):
+        extra = ""
+        if i == 0:
+            extra += "This is the OPENING part: start with a strong hook in the first 15 seconds.\n"
+        if i == total - 1:
+            extra += "This is the FINAL part: finish with a short summary and a call to subscribe.\n"
+        if sections:
+            prev_end = sections[-1][-500:]
+            extra += (
+                f'The previous part ended with: "...{prev_end}"\n'
+                "Continue naturally from there. Do not repeat it.\n"
+            )
+
+        section_prompt = f"""Video title: {outline['title']}
+Chapters in order: {names_str}
+Niche: {config.NICHE}
+Language: {config.LANGUAGE}
+
+You are writing PART {i + 1} of {total}: "{ch['name']}".
+What this part covers: {ch.get('point', '')}
+{extra}
+Write about {per} words of spoken narration for this part only (never less than {int(per * 0.85)} words).
+Spoken words only. No headings, no stage directions, no emojis, no [music] markers.
+Give practical, specific, accurate advice. Never invent statistics or tool features.
+
+Return JSON with exactly one key: "section" (the spoken text as a string)."""
+
+        text = ""
+        for attempt in range(1, 4):
+            data = groq_json(section_prompt)
+            text = (data.get("section") or "").strip()
+            if word_count(text) >= per * 0.7:
+                break
+            print(f"   Part {i + 1} chhota hai ({word_count(text)} words), dobara likh raha hoon... (try {attempt})")
+        sections.append(text)
+        print(f"   Part {i + 1}/{total} ready ({word_count(text)} words)")
+
+    narration = "\n\n".join(s for s in sections if s)
+    print(f"   Long script total: {word_count(narration)} words")
+
+    return {
+        "title": outline["title"],
+        "thumbnail_text": outline["thumbnail_text"],
+        "description": outline["description"],
+        "tags": outline["tags"],
+        "chapters": [{"time": "", "name": n} for n in names],
+        "narration": narration,
+    }
 
 
 def build_short(history: dict) -> dict:
@@ -314,13 +367,10 @@ def save_long(data: dict) -> Path:
     make_thumbnail(data["thumbnail_text"], folder / "thumbnail.jpg")
 
     print("   Long video render kar raha hoon...")
-    names = []
-    for ch in data["chapters"]:
-        names.append(ch.get("name", "") if isinstance(ch, dict) else str(ch))
-    names = [n for n in names if n] or [data["title"]]
+    names = [c["name"] for c in data["chapters"] if c.get("name")] or [data["title"]]
 
     total = audio_seconds(audio)
-    per = total / len(names)
+    per_slide = total / len(names)
 
     slides_dir = folder / "_slides"
     slides_dir.mkdir()
@@ -329,8 +379,8 @@ def save_long(data: dict) -> Path:
     for i, name in enumerate(names):
         img = slides_dir / f"slide_{i + 1:02d}.jpg"
         make_slide(img, data["title"], name)
-        parts.append((img, per))
-        chapters_out.append({"time": fmt_time(i * per), "name": name})
+        parts.append((img, per_slide))
+        chapters_out.append({"time": fmt_time(i * per_slide), "name": name})
 
     render_video(parts, audio, folder / "video.mp4")
     shutil.rmtree(slides_dir)
@@ -389,7 +439,7 @@ def main():
     history = load_history()
 
     for i in range(config.LONG_VIDEOS_PER_RUN):
-        print(f"[LONG {i + 1}/{config.LONG_VIDEOS_PER_RUN}] Script likh raha hoon...")
+        print(f"[LONG {i + 1}/{config.LONG_VIDEOS_PER_RUN}] Script likh raha hoon (chapter by chapter)...")
         data = build_long(history)
         folder = save_long(data)
         history["titles"].append(data["title"])
