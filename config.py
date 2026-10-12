@@ -13,7 +13,7 @@ TARGET_MINUTES = 7
 VIDEOS_PER_RUN = 2
 
 # Groq का free model
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 # Microsoft का free US English voice (बिना API key के)
 VOICE = "en-US-AndrewNeural"
