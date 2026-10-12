@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import edge_tts
@@ -76,18 +77,30 @@ def groq_json(user_prompt: str) -> dict:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.8,
-        "max_tokens": 6000,
+        "max_tokens": 2500,
         "response_format": {"type": "json_object"},
     }
-    r = requests.post(
-        GROQ_URL,
-        headers={"Authorization": f"Bearer {key}"},
-        json=payload,
-        timeout=240,
-    )
-    if r.status_code != 200:
-        raise SystemExit(f"Groq error {r.status_code}: {r.text}")
-    return json.loads(r.json()["choices"][0]["message"]["content"])
+
+    for attempt in range(1, 8):
+        time.sleep(config.API_PAUSE_SECONDS)
+        r = requests.post(
+            GROQ_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            json=payload,
+            timeout=240,
+        )
+        if r.status_code == 429:
+            m = re.search(r"try again in ([\d.]+)s", r.text)
+            wait = float(m.group(1)) if m else 15.0
+            wait = min(wait + 3, 90)
+            print(f"   Groq rate limit: {wait:.0f} sec ruk raha hoon... (try {attempt})")
+            time.sleep(wait)
+            continue
+        if r.status_code != 200:
+            raise SystemExit(f"Groq error {r.status_code}: {r.text}")
+        return json.loads(r.json()["choices"][0]["message"]["content"])
+
+    raise SystemExit("Groq rate limit baar-baar aa raha hai. Thodi der baad dobara run karo.")
 
 
 def build_long(history: dict) -> dict:
