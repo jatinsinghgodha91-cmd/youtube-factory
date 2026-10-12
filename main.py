@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import edge_tts
@@ -40,14 +41,14 @@ def groq_json(user_prompt: str) -> dict:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.8,
-        "max_tokens": 4000,
+        "max_tokens": 6000,
         "response_format": {"type": "json_object"},
     }
     r = requests.post(
         GROQ_URL,
         headers={"Authorization": f"Bearer {key}"},
         json=payload,
-        timeout=180,
+        timeout=240,
     )
     if r.status_code != 200:
         raise SystemExit(f"Groq error {r.status_code}: {r.text}")
@@ -95,7 +96,18 @@ def make_voice(text: str, path: Path):
         asyncio.run(_tts(text, path))
     except Exception as e:
         print(f"   Edge TTS fail hua ({type(e).__name__}), gTTS use kar raha hoon...")
-        gTTS(text=text, lang="en", tld="com").save(str(path))
+        raw = path.with_name("narration_raw.mp3")
+        gTTS(text=text, lang="en", tld="com").save(str(raw))
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-i", str(raw),
+                "-filter:a", f"atempo={config.VOICE_SPEED}",
+                str(path),
+            ],
+            check=True,
+        )
+        raw.unlink()
 
 
 # ---------- 3. Thumbnail (1280x720 JPG) ----------
