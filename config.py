@@ -21,6 +21,9 @@ SHORTS_PER_RUN = 2
 # Shorts की script में लगभग कितने words (130 words ≈ 45 सेकंड)
 SHORT_WORDS = 130
 
+# हर Groq request के बीच कितने सेकंड रुकना है (free tier की limit के लिए)
+API_PAUSE_SECONDS = 8
+
 # Groq का model
 GROQ_MODEL = "openai/gpt-oss-120b"
 
