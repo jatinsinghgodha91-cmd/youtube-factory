@@ -74,9 +74,8 @@ def load_font(size: int):
     return ImageFont.load_default(size=size)
 
 
-def pick_palette(seed: str) -> dict:
-    idx = int(hashlib.md5(seed.encode("utf-8")).hexdigest(), 16) % len(PALETTES)
-    return PALETTES[idx]
+def palette_index(seed: str) -> int:
+    return int(hashlib.md5(seed.encode("utf-8")).hexdigest(), 16) % len(PALETTES)
 
 
 # ---------- 1. LLM se content lena ----------
@@ -134,8 +133,8 @@ Pick a specific, high-interest topic that viewers would search for and want to s
 Return JSON with exactly these keys:
 {{
   "title": "clickable YouTube title, under 70 characters, promises a specific result",
-  "thumbnail_text": "3 to 5 words for the thumbnail, all caps",
-  "thumbnail_text_alt": "a different 3 to 5 word thumbnail text with a different angle, all caps",
+  "thumbnail_text": "3 to 5 words for the thumbnail, all caps, a bold promise",
+  "thumbnail_text_alt": "a second thumbnail text, 3 to 5 words, all caps, using COMPLETELY DIFFERENT words and a different angle from thumbnail_text",
   "hook": "the first 2 sentences of the video, promising one specific, valuable result",
   "description": "150 to 250 word YouTube description with a short summary and a subscribe call to action",
   "tags": ["15 to 20 relevant tags"],
@@ -201,10 +200,14 @@ Return JSON with exactly one key: "section" (the spoken text as a string)."""
     narration = "\n\n".join(s for s in sections if s)
     print(f"   Long script total: {word_count(narration)} words")
 
+    alt = (outline.get("thumbnail_text_alt") or "").strip()
+    if not alt or alt.upper() == outline["thumbnail_text"].strip().upper():
+        alt = "THE SIMPLE WAY TO START"
+
     return {
         "title": outline["title"],
         "thumbnail_text": outline["thumbnail_text"],
-        "thumbnail_text_alt": outline.get("thumbnail_text_alt") or outline["thumbnail_text"],
+        "thumbnail_text_alt": alt,
         "description": outline["description"],
         "tags": outline["tags"],
         "chapters": [{"time": "", "name": n} for n in names],
@@ -279,7 +282,7 @@ def audio_seconds(path: Path) -> float:
     return float(out)
 
 
-# ---------- 3. Design: background, text, thumbnail, slides ----------
+# ---------- 3. Design: background, text, thumbnails, slides ----------
 def base_canvas(W: int, H: int, pal: dict) -> Image.Image:
     img = Image.new("RGB", (W, H))
     d = ImageDraw.Draw(img)
@@ -328,7 +331,8 @@ def draw_lines_centered(draw, lines, font, W: int, y: int, line_h: int,
         y += line_h
 
 
-def make_thumbnail(text: str, tag: str, pal: dict, path: Path):
+def make_thumbnail_a(text: str, tag: str, pal: dict, path: Path):
+    """Style A: bayein text, gehra gradient, daayin accent stripe."""
     W, H = 1280, 720
     img = base_canvas(W, H, pal)
     d = ImageDraw.Draw(img)
@@ -350,6 +354,37 @@ def make_thumbnail(text: str, tag: str, pal: dict, path: Path):
         y += line_h
 
     d.rectangle([W - 16, 0, W, H], fill=pal["accent"])
+    img.save(path, "JPEG", quality=92)
+
+
+def make_thumbnail_b(text: str, tag: str, pal: dict, path: Path):
+    """Style B: beech mein chamakti accent patti, uspar gehre rang ka text."""
+    W, H = 1280, 720
+    img = base_canvas(W, H, pal)
+    d = ImageDraw.Draw(img)
+
+    band_top, band_bottom = 190, 530
+    d.rectangle([0, band_top, W, band_bottom], fill=pal["accent"])
+
+    dark = (14, 14, 24)
+    font = load_font(128)
+    lines = wrap_text(d, text.upper(), font, W - 160)
+    line_h = 150
+    block = line_h * len(lines)
+    y = band_top + ((band_bottom - band_top) - block) // 2
+    for line in lines:
+        bbox = d.textbbox((0, 0), line, font=font)
+        x = (W - (bbox[2] - bbox[0])) // 2
+        d.text((x, y), line, font=font, fill=dark)
+        y += line_h
+
+    tag_font = load_font(44)
+    tb = d.textbbox((0, 0), tag, font=tag_font)
+    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+    tx = (W - tw - 40) // 2
+    d.rounded_rectangle([tx, 56, tx + tw + 40, 56 + th + 26], radius=14, fill=(255, 255, 255))
+    d.text((tx + 20, 56 + 10), tag, font=tag_font, fill=dark)
+
     img.save(path, "JPEG", quality=92)
 
 
@@ -516,16 +551,18 @@ def make_folder(kind: str, title: str) -> Path:
 
 def save_long(data: dict) -> Path:
     folder = make_folder("LONG", data["title"])
-    pal = pick_palette(data["title"])
+    idx = palette_index(data["title"])
+    pal_a = PALETTES[idx]
+    pal_b = PALETTES[(idx + 2) % len(PALETTES)]
     (folder / "script.txt").write_text(data["narration"], encoding="utf-8")
 
     print("   Voiceover bana raha hoon...")
     audio = folder / "voice.mp3"
     make_voice(data["narration"], audio)
 
-    print("   Thumbnails bana raha hoon (A aur B)...")
-    make_thumbnail(data["thumbnail_text"], "FULL GUIDE", pal, folder / "thumbnail.jpg")
-    make_thumbnail(data["thumbnail_text_alt"], "FULL GUIDE", pal, folder / "thumbnail_alt.jpg")
+    print("   Thumbnails bana raha hoon (A aur B alag style mein)...")
+    make_thumbnail_a(data["thumbnail_text"], "FULL GUIDE", pal_a, folder / "thumbnail.jpg")
+    make_thumbnail_b(data["thumbnail_text_alt"], "FULL GUIDE", pal_b, folder / "thumbnail_alt.jpg")
 
     print("   Long video render kar raha hoon...")
     names = [c["name"] for c in data["chapters"] if c.get("name")] or [data["title"]]
@@ -537,7 +574,7 @@ def save_long(data: dict) -> Path:
     clips = []
     for i, name in enumerate(names):
         img = tmp / f"slide_{i + 1:02d}.jpg"
-        make_slide(img, data["title"], name, i + 1, len(names), pal)
+        make_slide(img, data["title"], name, i + 1, len(names), pal_a)
         clip = tmp / f"clip_{i + 1:02d}.mp4"
         make_clip(img, per, clip, 1920, 1080)
         clips.append(clip)
@@ -566,7 +603,7 @@ def save_long(data: dict) -> Path:
 
 def save_short(data: dict, n: int) -> Path:
     folder = make_folder(f"SHORT{n}", data["title"])
-    pal = pick_palette(data["title"] + str(n))
+    pal = PALETTES[palette_index(data["title"] + str(n))]
     (folder / "script.txt").write_text(data["narration"], encoding="utf-8")
 
     print("   Short ki voice bana raha hoon...")
