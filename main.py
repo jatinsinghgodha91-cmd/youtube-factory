@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -19,6 +20,7 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 ROOT = Path(__file__).parent
 OUTPUT = ROOT / config.OUTPUT_DIR
 HISTORY = ROOT / config.HISTORY_FILE
+FPS = 25
 
 SYSTEM_PROMPT = """You are a professional YouTube scriptwriter for a faceless US-focused channel.
 Your narration will be read aloud by a text-to-speech voice.
@@ -33,6 +35,15 @@ FONT_CANDIDATES = [
     "C:/Windows/Fonts/arialbd.ttf",                                  # Windows
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",             # Mac
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",          # Linux
+]
+
+# 5 color themes. Har video ka theme uske title se chunta jaata hai.
+PALETTES = [
+    {"bg1": (12, 24, 72), "bg2": (95, 30, 150), "accent": (255, 200, 0)},
+    {"bg1": (0, 58, 66), "bg2": (0, 150, 132), "accent": (255, 110, 64)},
+    {"bg1": (72, 0, 28), "bg2": (175, 26, 56), "accent": (255, 226, 120)},
+    {"bg1": (4, 40, 26), "bg2": (22, 128, 78), "accent": (255, 214, 0)},
+    {"bg1": (10, 10, 16), "bg2": (34, 40, 70), "accent": (0, 222, 255)},
 ]
 
 
@@ -62,6 +73,11 @@ def load_font(size: int):
         if Path(p).exists():
             return ImageFont.truetype(p, size)
     return ImageFont.load_default(size=size)
+
+
+def pick_palette(seed: str) -> dict:
+    idx = int(hashlib.md5(seed.encode("utf-8")).hexdigest(), 16) % len(PALETTES)
+    return PALETTES[idx]
 
 
 # ---------- 1. LLM se content lena ----------
@@ -109,7 +125,6 @@ def build_long(history: dict) -> dict:
     past = history["titles"][-200:]
     avoid = "\n".join(f"- {t}" for t in past) or "- (none yet)"
 
-    # Step A: title, description, tags aur chapter list ka outline
     outline_prompt = f"""Niche: {config.NICHE}
 Language: {config.LANGUAGE}
 
@@ -137,7 +152,6 @@ The chapters list must contain exactly {count} items."""
     names_str = " | ".join(names)
     total = len(chapters)
 
-    # Step B: har chapter ka narration alag se likhwana
     sections = []
     for i, ch in enumerate(chapters):
         extra = ""
@@ -256,14 +270,29 @@ def audio_seconds(path: Path) -> float:
     return float(out)
 
 
-# ---------- 3. Images (thumbnail, slides, shorts frame) ----------
-def draw_gradient(W: int, H: int):
+# ---------- 3. Design: background, text, thumbnail, slides ----------
+def base_canvas(W: int, H: int, pal: dict) -> Image.Image:
+    """Gradient background + translucent accent circles, professional look ke liye."""
     img = Image.new("RGB", (W, H))
-    draw = ImageDraw.Draw(img)
+    d = ImageDraw.Draw(img)
+    c1, c2 = pal["bg1"], pal["bg2"]
     for y in range(H):
-        shade = int(20 + 60 * y / H)
-        draw.line([(0, y), (W, y)], fill=(shade, 24 + shade // 3, 60 + shade))
-    return img, draw
+        t = y / H
+        c = tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+        d.line([(0, y), (W, y)], fill=c)
+
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.ellipse([int(W * 0.72), int(-H * 0.35), int(W * 1.22), int(H * 0.40)],
+               fill=(*pal["accent"], 40))
+    od.ellipse([int(-W * 0.18), int(H * 0.62), int(W * 0.34), int(H * 1.25)],
+               fill=(255, 255, 255, 22))
+    return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+
+
+def draw_outlined(draw, x: int, y: int, text: str, font, fill, stroke: int = 4):
+    draw.text((x, y), text, font=font, fill=fill,
+              stroke_width=stroke, stroke_fill=(0, 0, 0))
 
 
 def wrap_text(draw, text: str, font, max_width: int):
@@ -281,83 +310,153 @@ def wrap_text(draw, text: str, font, max_width: int):
     return lines
 
 
-def draw_outlined(draw, x: int, y: int, text: str, font, fill):
-    for dx in (-4, 0, 4):
-        for dy in (-4, 0, 4):
-            if dx or dy:
-                draw.text((x + dx, y + dy), text, font=font, fill=(0, 0, 0))
-    draw.text((x, y), text, font=font, fill=fill)
-
-
-def draw_lines_centered(draw, lines, font, W: int, y: int, line_h: int, fill=(255, 221, 0)):
-    for line in lines:
+def draw_lines_centered(draw, lines, font, W: int, y: int, line_h: int,
+                        fill=(255, 221, 0), last_fill=None, stroke: int = 4):
+    for i, line in enumerate(lines):
+        color = last_fill if (last_fill and i == len(lines) - 1) else fill
         bbox = draw.textbbox((0, 0), line, font=font)
         x = (W - (bbox[2] - bbox[0])) // 2
-        draw_outlined(draw, x, y, line, font, fill)
+        draw_outlined(draw, x, y, line, font, color, stroke)
         y += line_h
 
 
-def make_thumbnail(text: str, path: Path):
+def make_thumbnail(text: str, tag: str, pal: dict, path: Path):
     W, H = 1280, 720
-    img, draw = draw_gradient(W, H)
-    font = load_font(110)
-    lines = wrap_text(draw, text.upper(), font, W - 120)
-    line_h = 130
-    y = (H - line_h * len(lines)) // 2
-    draw_lines_centered(draw, lines, font, W, y, line_h)
+    img = base_canvas(W, H, pal)
+    d = ImageDraw.Draw(img)
+
+    # Upar wala tag (FULL GUIDE / QUICK TIP)
+    tag_font = load_font(42)
+    tb = d.textbbox((0, 0), tag, font=tag_font)
+    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+    d.rounded_rectangle([60, 56, 60 + tw + 40, 56 + th + 26], radius=14, fill=pal["accent"])
+    d.text((80, 56 + 10), tag, font=tag_font, fill=(20, 20, 30))
+
+    # Main text, last line accent color mein
+    font = load_font(124)
+    lines = wrap_text(d, text.upper(), font, 900)
+    line_h = 140
+    block = line_h * len(lines)
+    y = 150 + max(0, (520 - block) // 2)
+    for i, line in enumerate(lines):
+        color = pal["accent"] if i == len(lines) - 1 else (255, 255, 255)
+        draw_outlined(d, 60, y, line, font, color, stroke=8)
+        y += line_h
+
+    # Right side accent stripe
+    d.rectangle([W - 16, 0, W, H], fill=pal["accent"])
     img.save(path, "JPEG", quality=92)
 
 
-def make_slide(path: Path, video_title: str, chapter_name: str):
+def make_slide(path: Path, video_title: str, chapter_name: str, idx: int, total: int, pal: dict):
     W, H = 1920, 1080
-    img, draw = draw_gradient(W, H)
-    small = load_font(44)
-    big = load_font(96)
-    top_lines = wrap_text(draw, video_title, small, W - 160)
-    draw_lines_centered(draw, top_lines, small, W, 50, 56, fill=(255, 255, 255))
-    lines = wrap_text(draw, chapter_name, big, W - 200)
-    line_h = 120
-    y = (H - line_h * len(lines)) // 2 + 40
-    draw_lines_centered(draw, lines, big, W, y, line_h)
+    img = base_canvas(W, H, pal)
+    d = ImageDraw.Draw(img)
+
+    # Upar video ka title aur accent line
+    f_top = load_font(38)
+    top = video_title.upper()
+    if len(top) > 80:
+        top = top[:77] + "..."
+    d.text((100, 60), top, font=f_top, fill=(230, 230, 240))
+    d.rectangle([100, 118, 260, 124], fill=pal["accent"])
+
+    # Part label
+    f_part = load_font(46)
+    d.text((100, 360), f"PART {idx:02d} / {total:02d}", font=f_part, fill=pal["accent"])
+
+    # Chapter ka naam bade font mein
+    f_big = load_font(104)
+    lines = wrap_text(d, chapter_name, f_big, W - 200)
+    y = 440
+    for line in lines[:3]:
+        draw_outlined(d, 100, y, line, f_big, (255, 255, 255), stroke=3)
+        y += 130
+
+    # Neeche progress bar
+    bar_y = H - 90
+    d.rectangle([100, bar_y, W - 100, bar_y + 12], fill=(70, 70, 95))
+    filled = int((W - 200) * idx / total)
+    d.rectangle([100, bar_y, 100 + filled, bar_y + 12], fill=pal["accent"])
+
     img.save(path, "JPEG", quality=92)
 
 
-def make_short_frame(path: Path, overlay_text: str):
+def make_short_frame(path: Path, tag: str, overlay_text: str, pal: dict):
     W, H = 1080, 1920
-    img, draw = draw_gradient(W, H)
-    font = load_font(120)
-    lines = wrap_text(draw, overlay_text.upper(), font, W - 140)
+    img = base_canvas(W, H, pal)
+    d = ImageDraw.Draw(img)
+
+    tag_font = load_font(44)
+    tb = d.textbbox((0, 0), tag, font=tag_font)
+    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+    tx = (W - tw - 40) // 2
+    d.rounded_rectangle([tx, 150, tx + tw + 40, 150 + th + 26], radius=14, fill=pal["accent"])
+    d.text((tx + 20, 150 + 10), tag, font=tag_font, fill=(20, 20, 30))
+
+    font = load_font(124)
+    lines = wrap_text(d, overlay_text.upper(), font, W - 140)
     line_h = 150
     y = (H - line_h * len(lines)) // 2
-    draw_lines_centered(draw, lines, font, W, y, line_h)
+    draw_lines_centered(d, lines, font, W, y, line_h,
+                        fill=(255, 255, 255), last_fill=pal["accent"], stroke=8)
+
+    f_bottom = load_font(46)
+    label = "WATCH TILL THE END"
+    bb = d.textbbox((0, 0), label, font=f_bottom)
+    d.text(((W - (bb[2] - bb[0])) // 2, H - 220), label, font=f_bottom, fill=(255, 255, 255))
+    d.rectangle([W // 2 - 120, H - 150, W // 2 + 120, H - 138], fill=pal["accent"])
+
     img.save(path, "JPEG", quality=92)
 
 
-# ---------- 4. Video render (ffmpeg) ----------
-def render_video(parts, audio: Path, out_path: Path, max_seconds=None):
-    """parts = [(image_path, seconds), ...]; audio ke saath MP4 banata hai."""
-    list_file = out_path.parent / "_frames.txt"
-    lines = []
-    for img, secs in parts:
-        lines.append(f"file '{img.resolve().as_posix()}'")
-        lines.append(f"duration {secs:.2f}")
-    lines.append(f"file '{parts[-1][0].resolve().as_posix()}'")
-    list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+# ---------- 4. Video render (ffmpeg, motion + fade) ----------
+def make_clip(img_path: Path, seconds: float, out: Path, W: int, H: int):
+    """Ek still image se zoom + fade wali clip banata hai."""
+    frames = max(1, int(seconds * FPS))
+    fade = min(0.6, seconds / 3)
+    vf = (
+        f"zoompan=z='min(zoom+0.0008,1.12)':d={frames}:"
+        f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H},"
+        f"fade=t=in:st=0:d={fade:.2f},"
+        f"fade=t=out:st={max(0.0, seconds - fade):.2f}:d={fade:.2f},"
+        "format=yuv420p"
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(img_path),
+            "-vf", vf,
+            "-frames:v", str(frames),
+            "-r", str(FPS),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            str(out),
+        ],
+        check=True,
+    )
 
+
+def assemble(clips, audio: Path, out_path: Path, tmp_dir: Path, max_seconds=None):
+    """Saari clips jod kar audio ke saath final MP4 banata hai."""
+    list_file = tmp_dir / "clips.txt"
+    list_file.write_text(
+        "\n".join(f"file '{c.resolve().as_posix()}'" for c in clips) + "\n",
+        encoding="utf-8",
+    )
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", str(list_file),
         "-i", str(audio),
-        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "10",
+        "-map", "0:v", "-map", "1:a",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-r", str(FPS),
         "-c:a", "aac", "-b:a", "128k",
         "-shortest",
     ]
     if max_seconds:
         cmd += ["-t", str(max_seconds)]
     cmd.append(str(out_path))
-
     subprocess.run(cmd, check=True)
-    list_file.unlink()
 
 
 # ---------- 5. Files save karna ----------
@@ -370,6 +469,7 @@ def make_folder(kind: str, title: str) -> Path:
 
 def save_long(data: dict) -> Path:
     folder = make_folder("LONG", data["title"])
+    pal = pick_palette(data["title"])
     (folder / "script.txt").write_text(data["narration"], encoding="utf-8")
 
     print("   Voiceover bana raha hoon...")
@@ -377,31 +477,36 @@ def save_long(data: dict) -> Path:
     make_voice(data["narration"], audio)
 
     print("   Thumbnail bana raha hoon...")
-    make_thumbnail(data["thumbnail_text"], folder / "thumbnail.jpg")
+    make_thumbnail(data["thumbnail_text"], "FULL GUIDE", pal, folder / "thumbnail.jpg")
 
     print("   Long video render kar raha hoon...")
     names = [c["name"] for c in data["chapters"] if c.get("name")] or [data["title"]]
-
     total = audio_seconds(audio)
-    per_slide = total / len(names)
+    per = total / len(names)
 
-    slides_dir = folder / "_slides"
-    slides_dir.mkdir()
-    parts = []
-    chapters_out = []
+    tmp = folder / "_tmp"
+    tmp.mkdir()
+    clips = []
     for i, name in enumerate(names):
-        img = slides_dir / f"slide_{i + 1:02d}.jpg"
-        make_slide(img, data["title"], name)
-        parts.append((img, per_slide))
-        chapters_out.append({"time": fmt_time(i * per_slide), "name": name})
+        img = tmp / f"slide_{i + 1:02d}.jpg"
+        make_slide(img, data["title"], name, i + 1, len(names), pal)
+        clip = tmp / f"clip_{i + 1:02d}.mp4"
+        make_clip(img, per, clip, 1920, 1080)
+        clips.append(clip)
 
-    render_video(parts, audio, folder / "video.mp4")
-    shutil.rmtree(slides_dir)
+    assemble(clips, audio, folder / "video.mp4", tmp)
+    shutil.rmtree(tmp)
+
+    chapters_out = [{"time": fmt_time(i * per), "name": n} for i, n in enumerate(names)]
+
+    # YouTube chapters ke liye description mein timestamps (pehla hamesha 0:00)
+    chapter_lines = "\n".join(f"{c['time']} {c['name']}" for c in chapters_out)
+    description = data["description"] + "\n\nChapters:\n" + chapter_lines
 
     meta = {
         "title": data["title"],
         "thumbnail_text": data["thumbnail_text"],
-        "description": data["description"],
+        "description": description,
         "tags": data["tags"],
         "chapters": chapters_out,
     }
@@ -413,6 +518,7 @@ def save_long(data: dict) -> Path:
 
 def save_short(data: dict, n: int) -> Path:
     folder = make_folder(f"SHORT{n}", data["title"])
+    pal = pick_palette(data["title"] + str(n))
     (folder / "script.txt").write_text(data["narration"], encoding="utf-8")
 
     print("   Short ki voice bana raha hoon...")
@@ -420,10 +526,15 @@ def save_short(data: dict, n: int) -> Path:
     make_voice(data["narration"], audio)
 
     print("   Short video render kar raha hoon...")
-    frame = folder / "frame.jpg"
-    make_short_frame(frame, data["overlay_text"])
-    render_video([(frame, audio_seconds(audio))], audio, folder / "short.mp4", max_seconds=58)
-    frame.unlink()
+    tmp = folder / "_tmp"
+    tmp.mkdir()
+    frame = tmp / "frame.jpg"
+    make_short_frame(frame, "QUICK TIP", data["overlay_text"], pal)
+    seconds = min(audio_seconds(audio), 58)
+    clip = tmp / "clip.mp4"
+    make_clip(frame, seconds, clip, 1080, 1920)
+    assemble([clip], audio, folder / "short.mp4", tmp, max_seconds=58)
+    shutil.rmtree(tmp)
 
     desc = data["description"]
     if "#Shorts" not in desc:
