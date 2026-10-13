@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 import config
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / config.OUTPUT_DIR
 HISTORY = ROOT / config.HISTORY_FILE
 FPS = 25
@@ -26,7 +26,6 @@ SYSTEM_PROMPT = """You are a professional YouTube scriptwriter for a faceless US
 Your narration will be read aloud by a text-to-speech voice.
 Rules:
 - Write only spoken words. No stage directions, no [music] markers, no headings, no emojis.
-- Open with a strong hook in the first 15 seconds.
 - Use short sentences and a friendly, confident tone.
 - Give practical, specific, accurate advice. Never invent statistics, prices or tool features.
 - Always return valid JSON only, exactly matching the schema requested."""
@@ -129,13 +128,15 @@ def build_long(history: dict) -> dict:
 Language: {config.LANGUAGE}
 
 Plan ONE long YouTube video with exactly {count} chapters.
-Pick a specific, high-interest topic in this niche. It must be clearly different from these past titles:
+Pick a specific, high-interest topic that viewers would search for and want to save. It must be clearly different from these past titles:
 {avoid}
 
 Return JSON with exactly these keys:
 {{
-  "title": "clickable YouTube title, under 70 characters",
+  "title": "clickable YouTube title, under 70 characters, promises a specific result",
   "thumbnail_text": "3 to 5 words for the thumbnail, all caps",
+  "thumbnail_text_alt": "a different 3 to 5 word thumbnail text with a different angle, all caps",
+  "hook": "the first 2 sentences of the video, promising one specific, valuable result",
   "description": "150 to 250 word YouTube description with a short summary and a subscribe call to action",
   "tags": ["15 to 20 relevant tags"],
   "chapters": [{{"name": "short chapter title", "point": "one sentence: what this chapter teaches"}}]
@@ -148,6 +149,7 @@ The chapters list must contain exactly {count} items."""
     if not chapters:
         raise ValueError("LLM ne chapters nahi diye")
 
+    hook = outline.get("hook") or ""
     names = [c["name"] for c in chapters]
     names_str = " | ".join(names)
     total = len(chapters)
@@ -156,9 +158,14 @@ The chapters list must contain exactly {count} items."""
     for i, ch in enumerate(chapters):
         extra = ""
         if i == 0:
-            extra += "This is the OPENING part: start with a strong hook in the first 15 seconds.\n"
+            extra += "This is the OPENING part. Start with the hook below, saying it nearly word for word, then deliver on it right away.\n"
+            if hook:
+                extra += f'Hook: "{hook}"\n'
         if i == total - 1:
-            extra += "This is the FINAL part: finish with a short summary and a call to subscribe.\n"
+            extra += (
+                "This is the FINAL part: give a short summary of the key takeaways, "
+                "then ask viewers to comment one specific question about this topic.\n"
+            )
         if sections:
             prev_end = sections[-1][-500:]
             extra += (
@@ -175,8 +182,9 @@ You are writing PART {i + 1} of {total}: "{ch['name']}".
 What this part covers: {ch.get('point', '')}
 {extra}
 Write about {per} words of spoken narration for this part only (never less than {int(per * 0.85)} words).
+Include at least one concrete, actionable step the viewer can do today.
 Spoken words only. No headings, no stage directions, no emojis, no [music] markers.
-Give practical, specific, accurate advice. Never invent statistics or tool features.
+Never invent statistics or tool features.
 
 Return JSON with exactly one key: "section" (the spoken text as a string)."""
 
@@ -196,6 +204,7 @@ Return JSON with exactly one key: "section" (the spoken text as a string)."""
     return {
         "title": outline["title"],
         "thumbnail_text": outline["thumbnail_text"],
+        "thumbnail_text_alt": outline.get("thumbnail_text_alt") or outline["thumbnail_text"],
         "description": outline["description"],
         "tags": outline["tags"],
         "chapters": [{"time": "", "name": n} for n in names],
@@ -212,7 +221,7 @@ def build_short(history: dict) -> dict:
 Language: {config.LANGUAGE}
 Make ONE YouTube Shorts script: a vertical video, under 50 seconds when spoken.
 Narration length: about {target} words.
-Rules: one single tip or idea only. The first sentence must be a hook that grabs attention in 2 seconds. End with a line that makes people follow or watch again.
+Rules: one single tip or idea only. The first sentence must be a hook that grabs attention in 2 seconds. Include one concrete step the viewer can do today. End with a line that makes people follow or comment.
 
 Pick a topic clearly different from these past titles:
 {avoid}
@@ -272,7 +281,6 @@ def audio_seconds(path: Path) -> float:
 
 # ---------- 3. Design: background, text, thumbnail, slides ----------
 def base_canvas(W: int, H: int, pal: dict) -> Image.Image:
-    """Gradient background + translucent accent circles, professional look ke liye."""
     img = Image.new("RGB", (W, H))
     d = ImageDraw.Draw(img)
     c1, c2 = pal["bg1"], pal["bg2"]
@@ -325,14 +333,12 @@ def make_thumbnail(text: str, tag: str, pal: dict, path: Path):
     img = base_canvas(W, H, pal)
     d = ImageDraw.Draw(img)
 
-    # Upar wala tag (FULL GUIDE / QUICK TIP)
     tag_font = load_font(42)
     tb = d.textbbox((0, 0), tag, font=tag_font)
     tw, th = tb[2] - tb[0], tb[3] - tb[1]
     d.rounded_rectangle([60, 56, 60 + tw + 40, 56 + th + 26], radius=14, fill=pal["accent"])
     d.text((80, 56 + 10), tag, font=tag_font, fill=(20, 20, 30))
 
-    # Main text, last line accent color mein
     font = load_font(124)
     lines = wrap_text(d, text.upper(), font, 900)
     line_h = 140
@@ -343,7 +349,6 @@ def make_thumbnail(text: str, tag: str, pal: dict, path: Path):
         draw_outlined(d, 60, y, line, font, color, stroke=8)
         y += line_h
 
-    # Right side accent stripe
     d.rectangle([W - 16, 0, W, H], fill=pal["accent"])
     img.save(path, "JPEG", quality=92)
 
@@ -353,7 +358,6 @@ def make_slide(path: Path, video_title: str, chapter_name: str, idx: int, total:
     img = base_canvas(W, H, pal)
     d = ImageDraw.Draw(img)
 
-    # Upar video ka title aur accent line
     f_top = load_font(38)
     top = video_title.upper()
     if len(top) > 80:
@@ -361,11 +365,9 @@ def make_slide(path: Path, video_title: str, chapter_name: str, idx: int, total:
     d.text((100, 60), top, font=f_top, fill=(230, 230, 240))
     d.rectangle([100, 118, 260, 124], fill=pal["accent"])
 
-    # Part label
     f_part = load_font(46)
     d.text((100, 360), f"PART {idx:02d} / {total:02d}", font=f_part, fill=pal["accent"])
 
-    # Chapter ka naam bade font mein
     f_big = load_font(104)
     lines = wrap_text(d, chapter_name, f_big, W - 200)
     y = 440
@@ -373,7 +375,6 @@ def make_slide(path: Path, video_title: str, chapter_name: str, idx: int, total:
         draw_outlined(d, 100, y, line, f_big, (255, 255, 255), stroke=3)
         y += 130
 
-    # Neeche progress bar
     bar_y = H - 90
     d.rectangle([100, bar_y, W - 100, bar_y + 12], fill=(70, 70, 95))
     filled = int((W - 200) * idx / total)
@@ -410,9 +411,53 @@ def make_short_frame(path: Path, tag: str, overlay_text: str, pal: dict):
     img.save(path, "JPEG", quality=92)
 
 
-# ---------- 4. Video render (ffmpeg, motion + fade) ----------
+# ---------- 4. Captions (ASS subtitles) ----------
+def build_captions(text: str, total_seconds: float, max_words: int = 6):
+    words = text.replace("\n", " ").split()
+    if not words or total_seconds <= 0:
+        return []
+    groups = [words[i:i + max_words] for i in range(0, len(words), max_words)]
+    n = len(words)
+    t = 0.0
+    out = []
+    for g in groups:
+        dur = total_seconds * len(g) / n
+        out.append((t, t + dur, " ".join(g)))
+        t += dur
+    return out
+
+
+def write_ass(path: Path, chunks, W: int, H: int, font_size: int, margin_v: int):
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {W}
+PlayResY: {H}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,DejaVu Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,1,2,120,120,{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    def ts(sec: float) -> str:
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = sec % 60
+        return f"{h}:{m:02d}:{s:05.2f}"
+
+    lines = [header]
+    for s, e, txt in chunks:
+        safe = txt.replace("{", "(").replace("}", ")").replace("\\", "")
+        lines.append(f"Dialogue: 0,{ts(s)},{ts(e)},Default,,0,0,0,,{safe}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# ---------- 5. Video render (ffmpeg: motion + fade + captions) ----------
 def make_clip(img_path: Path, seconds: float, out: Path, W: int, H: int):
-    """Ek still image se zoom + fade wali clip banata hai."""
     frames = max(1, int(seconds * FPS))
     fade = min(0.6, seconds / 3)
     vf = (
@@ -436,18 +481,20 @@ def make_clip(img_path: Path, seconds: float, out: Path, W: int, H: int):
     )
 
 
-def assemble(clips, audio: Path, out_path: Path, tmp_dir: Path, max_seconds=None):
-    """Saari clips jod kar audio ke saath final MP4 banata hai."""
+def assemble(clips, audio: Path, out_path: Path, tmp_dir: Path,
+             max_seconds=None, subs_name=None):
     list_file = tmp_dir / "clips.txt"
     list_file.write_text(
         "\n".join(f"file '{c.resolve().as_posix()}'" for c in clips) + "\n",
         encoding="utf-8",
     )
+    vf_args = ["-vf", f"subtitles={subs_name}"] if subs_name else []
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", str(list_file),
-        "-i", str(audio),
+        "-i", str(audio.resolve()),
         "-map", "0:v", "-map", "1:a",
+        *vf_args,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-pix_fmt", "yuv420p", "-r", str(FPS),
         "-c:a", "aac", "-b:a", "128k",
@@ -455,11 +502,11 @@ def assemble(clips, audio: Path, out_path: Path, tmp_dir: Path, max_seconds=None
     ]
     if max_seconds:
         cmd += ["-t", str(max_seconds)]
-    cmd.append(str(out_path))
-    subprocess.run(cmd, check=True)
+    cmd.append(str(out_path.resolve()))
+    subprocess.run(cmd, check=True, cwd=str(tmp_dir))
 
 
-# ---------- 5. Files save karna ----------
+# ---------- 6. Files save karna ----------
 def make_folder(kind: str, title: str) -> Path:
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     folder = OUTPUT / f"{kind}_{stamp}_{slugify(title)}"
@@ -476,8 +523,9 @@ def save_long(data: dict) -> Path:
     audio = folder / "voice.mp3"
     make_voice(data["narration"], audio)
 
-    print("   Thumbnail bana raha hoon...")
+    print("   Thumbnails bana raha hoon (A aur B)...")
     make_thumbnail(data["thumbnail_text"], "FULL GUIDE", pal, folder / "thumbnail.jpg")
+    make_thumbnail(data["thumbnail_text_alt"], "FULL GUIDE", pal, folder / "thumbnail_alt.jpg")
 
     print("   Long video render kar raha hoon...")
     names = [c["name"] for c in data["chapters"] if c.get("name")] or [data["title"]]
@@ -494,18 +542,18 @@ def save_long(data: dict) -> Path:
         make_clip(img, per, clip, 1920, 1080)
         clips.append(clip)
 
-    assemble(clips, audio, folder / "video.mp4", tmp)
+    write_ass(tmp / "subs.ass", build_captions(data["narration"], total), 1920, 1080, 56, 120)
+    assemble(clips, audio, folder / "video.mp4", tmp, subs_name="subs.ass")
     shutil.rmtree(tmp)
 
     chapters_out = [{"time": fmt_time(i * per), "name": n} for i, n in enumerate(names)]
-
-    # YouTube chapters ke liye description mein timestamps (pehla hamesha 0:00)
     chapter_lines = "\n".join(f"{c['time']} {c['name']}" for c in chapters_out)
     description = data["description"] + "\n\nChapters:\n" + chapter_lines
 
     meta = {
         "title": data["title"],
         "thumbnail_text": data["thumbnail_text"],
+        "thumbnail_text_alt": data["thumbnail_text_alt"],
         "description": description,
         "tags": data["tags"],
         "chapters": chapters_out,
@@ -533,7 +581,8 @@ def save_short(data: dict, n: int) -> Path:
     seconds = min(audio_seconds(audio), 58)
     clip = tmp / "clip.mp4"
     make_clip(frame, seconds, clip, 1080, 1920)
-    assemble([clip], audio, folder / "short.mp4", tmp, max_seconds=58)
+    write_ass(tmp / "subs.ass", build_captions(data["narration"], seconds), 1080, 1920, 60, 330)
+    assemble([clip], audio, folder / "short.mp4", tmp, max_seconds=58, subs_name="subs.ass")
     shutil.rmtree(tmp)
 
     desc = data["description"]
@@ -546,7 +595,7 @@ def save_short(data: dict, n: int) -> Path:
     return folder
 
 
-# ---------- 6. History (duplicate topics se bachne ke liye) ----------
+# ---------- 7. History (duplicate topics se bachne ke liye) ----------
 def load_history() -> dict:
     if HISTORY.exists():
         return json.loads(HISTORY.read_text(encoding="utf-8"))
