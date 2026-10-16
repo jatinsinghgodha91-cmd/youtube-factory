@@ -2,3 +2,5 @@ requests>=2.31
 edge-tts>=6.1
 gTTS>=2.5
 Pillow>=10.1
+google-api-python-client>=2.100
+google-auth>=2.20
