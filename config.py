@@ -21,7 +21,7 @@ SHORTS_PER_RUN = 2
 # Shorts की script में लगभग कितने words (130 words ≈ 45 सेकंड)
 SHORT_WORDS = 130
 
-# हर Groq request के बीच कितने सेकंड रुकना है (free tier की limit के लिए)
+# हर Groq request के बीच कितने सेकंड रुकना है
 API_PAUSE_SECONDS = 8
 
 # Groq का model
@@ -36,3 +36,10 @@ VOICE_SPEED = 1.12
 # Output और history files के नाम
 OUTPUT_DIR = "output"
 HISTORY_FILE = "history.json"
+
+# YouTube upload settings
+# "private" = पहले सिर्फ तुम देखोगे, check करके बाद में public करना
+YT_PRIVACY = "public
+"
+# 27 = Education
+YT_CATEGORY_ID = "27"
