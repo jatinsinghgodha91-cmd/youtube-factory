@@ -39,7 +39,7 @@ HISTORY_FILE = "history.json"
 
 # YouTube upload settings
 # "private" = पहले सिर्फ तुम देखोगे, check करके बाद में public करना
-YT_PRIVACY = "public
+YT_PRIVACY = "public"
 "
 # 27 = Education
 YT_CATEGORY_ID = "27"
