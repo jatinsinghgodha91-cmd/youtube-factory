@@ -1,0 +1,67 @@
+name: Motion Shorts (AI channel)
+
+on:
+  schedule:
+    - cron: "30 7 * * *"   # roz 07:30 UTC = दोपहर 13:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: motion-shorts
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Code download karo
+        uses: actions/checkout@v4
+
+      - name: Python setup karo
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Font aur ffmpeg install karo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core ffmpeg
+
+      - name: Libraries install karo
+        run: pip install -r requirements.txt
+
+      - name: Motion Short banao
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python motion_ai.py
+
+      - name: YouTube par upload karo
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python uploader.py
+
+      - name: Output ko download ke liye save karo
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-short-${{ github.run_number }}
+          path: output/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: History save karo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add motion_history.json
+          if ! git diff --staged --quiet; then
+            git commit -m "Update motion history after run ${{ github.run_number }}"
+            git pull --rebase
+            git push
+          fi
