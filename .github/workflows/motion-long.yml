@@ -1,67 +1,33 @@
-name: Motion Long video (AI channel)
-
-on:
-  schedule:
-    - cron: "0 6 * * *"   # roz 06:00 UTC = सुबह 11:30 IST
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-concurrency:
-  group: motion-long
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - name: Code download karo
-        uses: actions/checkout@v4
-
-      - name: Python setup karo
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Font aur ffmpeg install karo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-dejavu-core ffmpeg
-
-      - name: Libraries install karo
-        run: pip install -r requirements.txt
-
-      - name: Motion video banao
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: python motion_ai_long.py
-
-      - name: YouTube par upload karo
-        env:
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: python uploader.py
-
-      - name: Output ko download ke liye save karo
-        uses: actions/upload-artifact@v4
-        with:
-          name: motion-long-${{ github.run_number }}
-          path: output/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: History save karo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add motion_long_history.json
-          if ! git diff --staged --quiet; then
-            git commit -m "Update motion long history after run ${{ github.run_number }}"
-            git pull --rebase
-            git push
-          fi
+def groq_json(user_prompt):
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise SystemExit("GROQ_API_KEY set nahi hai")
+    payload = {
+        "model": config.GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 4000,
+        "response_format": {"type": "json_object"},
+    }
+    for attempt in range(1, 8):
+        time.sleep(config.API_PAUSE_SECONDS)
+        r = requests.post(GROQ_URL, headers={"Authorization": f"Bearer {key}"}, json=payload, timeout=240)
+        if r.status_code == 429:
+            m = re.search(r"try again in ([\d.]+)s", r.text)
+            wait = min((float(m.group(1)) if m else 15.0) + 3, 90)
+            print(f"   Groq rate limit, {wait:.0f} sec ruk raha hoon... ({attempt})")
+            time.sleep(wait)
+            continue
+        if r.status_code == 400 and "json_validate_failed" in r.text:
+            print(f"   Groq ka JSON kharab tha, dobara try kar raha hoon... ({attempt})")
+            continue
+        if r.status_code != 200:
+            raise SystemExit(f"Groq error {r.status_code}: {r.text}")
+        try:
+            return json.loads(r.json()["choices"][0]["message"]["content"])
+        except (json.JSONDecodeError, KeyError, IndexError):
+            print(f"   JSON parse nahi hua, dobara try kar raha hoon... ({attempt})")
+    raise SystemExit("Groq 7 tries mein bhi valid JSON nahi de paya.")
