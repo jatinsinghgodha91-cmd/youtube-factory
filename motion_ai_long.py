@@ -1,4 +1,5 @@
 import asyncio
+import bisect
 import datetime
 import hashlib
 import json
@@ -22,9 +23,9 @@ HISTORY = ROOT / "motion_long_history.json"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 W, H = 1920, 1080
-FPS = 30
+FPS = 24
 VOICE_SPEED = 1.08
-MAX_SECONDS = 60
+CHAPTER_COUNT = 8
 
 PALETTES = [
     {"bg1": (12, 24, 72), "bg2": (95, 30, 150), "accent": (255, 200, 0)},
@@ -49,7 +50,7 @@ FONT_CANDIDATES = [
 _fonts = {}
 
 SYSTEM_PROMPT = """You write clear, accurate YouTube video scripts for a US audience about AI tools for freelancers and small businesses.
-Narration is read aloud by a text-to-speech voice: spoken words only.
+Narration is read aloud by a text-to-speech voice: spoken words only, no stage directions, no emojis.
 Never invent prices, features or statistics. Always return valid JSON only."""
 
 
@@ -68,7 +69,7 @@ def text_size(d, text, f):
 
 def wrap(d, text, f, max_w):
     lines, cur = [], ""
-    for word in text.split():
+    for word in str(text).split():
         test = f"{cur} {word}".strip()
         if text_size(d, test, f)[0] <= max_w:
             cur = test
@@ -79,6 +80,10 @@ def wrap(d, text, f, max_w):
     if cur:
         lines.append(cur)
     return lines
+
+
+def word_count(text):
+    return len(str(text).split())
 
 
 def center(d, text, f, y, fill, stroke=0):
@@ -99,6 +104,11 @@ def palette_for(seed):
 def slugify(text):
     s = re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
     return s[:50] or "video"
+
+
+def fmt_time(seconds):
+    m, s = divmod(int(seconds), 60)
+    return f"{m}:{s:02d}"
 
 
 def make_bg(pal, w=W, h=H):
@@ -181,7 +191,7 @@ def draw_chrome(d, pal, progress):
 
 
 def draw_caption(d, narration, t, dur):
-    words = narration.split()
+    words = str(narration).split()
     if not words:
         return
     idx = min(len(words) - 1, int(t / max(dur, 0.1) * len(words)))
@@ -194,46 +204,43 @@ def draw_caption(d, narration, t, dur):
     d.text((x, y), group, font=f, fill=WHITE)
 
 
-def scene_hook(d, sc, t, pal):
-    p = ease(t / 0.9)
-    slide = int((1 - p) * 90)
-    lines = wrap(d, sc["title"].upper(), font(118), 1150)
-    y = 220 + slide
-    for i, line in enumerate(lines):
-        color = pal["accent"] if i == len(lines) - 1 else WHITE
-        d.text((120, y), line, font=font(118), fill=color)
-        y += 150
-    for j, line in enumerate(wrap(d, sc["body"], font(50), 1150)):
-        d.text((120, y + 30 + j * 70), line, font=font(50), fill=GREY)
-    pulse = 1 + 0.05 * math.sin(t * 5)
-    r = int(170 * pulse * p)
-    if r > 5:
-        icon_bolt(d, 1480, 500, r, pal["accent"])
+def scene_chapter(d, sc, t, pal):
+    p = ease(t / 0.8)
+    off = int((1 - p) * 60)
+    d.text((120, 300 + off), "CHAPTER", font=font(64), fill=GREY)
+    d.text((120, 360 + off), sc["num"], font=font(240), fill=pal["accent"])
+    y = 620 + off
+    for line in wrap(d, sc["title"].upper(), font(90), 1700)[:2]:
+        d.text((120, y), line, font=font(90), fill=WHITE)
+        y += 104
+    n, idx = sc["total"], sc["index"]
+    for i in range(n):
+        x = 1260 + i * 72
+        col = pal["accent"] if i <= idx else TRACK
+        d.ellipse([x - 16, 140 - 16, x + 16, 140 + 16], fill=col)
 
 
-def scene_step(d, sc, t, pal):
+def scene_point(d, sc, t, pal):
     p = ease(t / 0.7)
-    off = int((1 - p) * 80)
-    card(d, 100, 230 + off, 1720, 600)
-    d.text((160, 280 + off), sc["number"], font=font(200), fill=pal["accent"])
-    y = 520 + off
-    for line in wrap(d, sc["title"].upper(), font(90), 1000):
-        d.text((480, y), line, font=font(90), fill=WHITE)
-        y += 105
-    y += 10
-    for line in wrap(d, sc["body"], font(48), 1000):
-        d.text((480, y), line, font=font(48), fill=GREY)
-        y += 64
-    ICONS.get(sc.get("icon"), icon_check)(d, 1560, 530 + off, 140, pal["accent"])
+    off = int((1 - p) * 70)
+    d.text((120, 130), f"CHAPTER {sc['chapter']:02d}", font=font(40), fill=pal["accent"])
+    card(d, 120, 230 + off, 1680, 600)
+    ICONS.get(sc["icon"], icon_check)(d, 1560, 530 + off, 130, pal["accent"])
+    y = 300 + off
+    for line in wrap(d, sc["title"].upper(), font(84), 1100)[:2]:
+        d.text((220, y), line, font=font(84), fill=WHITE)
+        y += 100
+    y += 20
+    for line in wrap(d, sc["body"], font(46), 1100)[:3]:
+        d.text((220, y), line, font=font(46), fill=GREY)
+        y += 62
 
 
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
     center(d, "SAVE THIS", font(120), 260 + int((1 - p) * 40), pal["accent"], stroke=8)
-    y = 420
-    for line in wrap(d, sc["body"], font(56), 1500):
-        center(d, line, font(56), y, GREY)
-        y += 74
+    center(d, "Follow for more AI tools for freelancers", font(56), 430, GREY)
+    center(d, "Check each tool's pricing page before you sign up", font(46), 510, GREY)
     if t > 1.8:
         x0 = (W - 520) // 2
         d.rounded_rectangle([x0, 740, x0 + 520, 850], radius=55, fill=RED)
@@ -242,10 +249,10 @@ def scene_outro(d, sc, t, pal):
         d.text((x0 + (520 - w) // 2, 740 + (110 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
 
-SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
+SCENE_FN = {"chapter": scene_chapter, "point": scene_point, "outro": scene_outro}
 
 
-# ---------- Groq script ----------
+# ---------- Groq ----------
 def groq_json(user_prompt):
     key = os.environ.get("GROQ_API_KEY")
     if not key:
@@ -256,8 +263,8 @@ def groq_json(user_prompt):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.8,
-        "max_tokens": 2500,
+        "temperature": 0.7,
+        "max_tokens": 4000,
         "response_format": {"type": "json_object"},
     }
     for attempt in range(1, 8):
@@ -269,64 +276,99 @@ def groq_json(user_prompt):
             print(f"   Groq rate limit, {wait:.0f} sec ruk raha hoon... ({attempt})")
             time.sleep(wait)
             continue
+        if r.status_code == 400 and "json_validate_failed" in r.text:
+            print(f"   Groq ka JSON kharab tha, dobara try kar raha hoon... ({attempt})")
+            continue
         if r.status_code != 200:
             raise SystemExit(f"Groq error {r.status_code}: {r.text}")
-        return json.loads(r.json()["choices"][0]["message"]["content"])
-    raise SystemExit("Groq rate limit baar-baar aaya. Thodi der baad run karo.")
+        try:
+            return json.loads(r.json()["choices"][0]["message"]["content"])
+        except (json.JSONDecodeError, KeyError, IndexError):
+            print(f"   JSON parse nahi hua, dobara try kar raha hoon... ({attempt})")
+    raise SystemExit("Groq 7 tries mein bhi valid JSON nahi de paya.")
 
 
-def valid_scenes(scenes):
-    if [s.get("type") for s in scenes] != ["hook", "step", "step", "step", "outro"]:
+def build_outline(history):
+    past = history["titles"][-100:]
+    avoid = "\n".join(f"- {t}" for t in past) or "- (none yet)"
+    prompt = f"""Niche: {config.NICHE}
+Language: English (US audience)
+
+Plan ONE long YouTube video of about 9 to 10 minutes with exactly {CHAPTER_COUNT} chapters.
+It must be a practical guide to AI tools or AI workflows that save a freelancer or small business time or money.
+The topic must be clearly different from these past titles:
+{avoid}
+
+Rules:
+- Use only well-known tools. Never invent prices, features or statistics. For prices say "check their pricing page".
+- Each chapter teaches one concrete thing the viewer can do this week.
+
+Return JSON with exactly these keys:
+"title": clickable YouTube title under 70 characters, no hashtags
+"thumbnail_text": 3 to 5 words, all caps, a bold promise
+"description": 150 to 200 words: a short summary, then a subscribe call to action, then 3 hashtags
+"tags": a list of 15 to 20 tags
+"chapters": a list of exactly {CHAPTER_COUNT} objects, each with "title" (max 5 words) and "point" (one sentence)"""
+    for attempt in range(1, 4):
+        data = groq_json(prompt)
+        chapters = data.get("chapters") or []
+        if (data.get("title") and data.get("thumbnail_text") and data.get("description")
+                and data.get("tags") and len(chapters) == CHAPTER_COUNT
+                and all(str(c.get("title", "")).strip() for c in chapters)):
+            return data
+        print(f"   Outline sahi nahi tha, dobara try kar raha hoon... ({attempt})")
+    raise SystemExit("Outline 3 tries mein bhi sahi nahi bana")
+
+
+def valid_chapter(ch, is_last):
+    cn = str(ch.get("chapter_narration", "")).strip()
+    if not 15 <= word_count(cn) <= 40:
         return False
-    for s in scenes:
-        if not str(s.get("body", "")).strip() or not str(s.get("narration", "")).strip():
+    pts = ch.get("points") or []
+    if len(pts) != 3:
+        return False
+    for p in pts:
+        if not str(p.get("title", "")).strip() or not str(p.get("body", "")).strip():
             return False
-        if s["type"] != "outro" and not str(s.get("title", "")).strip():
+        if not 40 <= word_count(p.get("narration", "")) <= 70:
             return False
+    if is_last and not 20 <= word_count(ch.get("outro_narration", "")) <= 50:
+        return False
     return True
 
 
-def build_script(history):
-    past = history["titles"][-100:]
-    avoid = "\n".join(f"- {t}" for t in past) or "- (none yet)"
-    prompt = (
-        f"Niche: {config.NICHE}\n"
-        "Language: English (US audience)\n\n"
-        "Make ONE landscape YouTube video script, about 55 seconds when spoken. "
-        "Total narration across all scenes: 130 to 150 words.\n\n"
-        "Topic: one specific, practical AI tool or AI workflow that saves a freelancer or small business "
-        "time or money this week. It must be clearly different from these past titles:\n"
-        f"{avoid}\n\n"
-        "Rules:\n"
-        "- Use only well-known tools. Never invent prices, features or statistics. "
-        "For pricing say 'check their pricing page'.\n"
-        "- Each step is one concrete action the viewer can do today.\n"
-        "- Narration is spoken words only. No emojis, no stage directions.\n"
-        "- Step icon must be one of: bolt, check, clock, dollar, gear, star, arrow.\n"
-        "- Hook title: max 5 words. Step title: max 4 words.\n"
-        "- Body: max 12 words for hook, max 14 words for each step, max 16 words for outro.\n\n"
-        "Return JSON with exactly these keys: title, description, tags, thumbnail_text, scenes.\n"
-        "title: clickable YouTube title under 60 characters, no hashtags.\n"
-        "description: 2 short sentences, then 3 relevant hashtags.\n"
-        "tags: a list of 8 to 12 tags.\n"
-        "thumbnail_text: 3 to 5 words, all caps.\n"
-        "scenes: exactly 5 objects in this order: hook, step, step, step, outro.\n"
-        "Each scene has: type, title, body, narration. Steps also have: number (01, 02, 03) and icon.\n"
-        "The outro has type, body and narration (title can be empty)."
-    )
+def build_chapter(outline, idx, prev_text, is_last):
+    titles = [c["title"] for c in outline["chapters"]]
+    ch = outline["chapters"][idx]
+    prompt = f"""Video title: {outline['title']}
+All chapters in order: {' | '.join(titles)}
+Niche: {config.NICHE}
+Language: English (US audience)
+
+You are writing CHAPTER {idx + 1} of {CHAPTER_COUNT}: "{ch['title']}".
+This chapter teaches: {ch.get('point', '')}
+Previous narration ended with: "...{prev_text[-300:]}"
+Continue naturally. Do not repeat earlier points.
+
+Return JSON with exactly these keys:
+"chapter_narration": 20 to 30 words that introduce this chapter.
+"points": exactly 3 objects. Each object has:
+  "title": max 4 words
+  "body": max 14 words, a short summary of the point
+  "icon": one of bolt, check, clock, dollar, gear, star, arrow
+  "narration": 50 to 60 words of spoken narration explaining the point, with one concrete action the viewer can do today
+{'"outro_narration": 25 to 40 words. Summarize the key takeaways of the whole video and ask viewers to comment one question.' if is_last else ''}
+
+Spoken words only. No headings, no emojis, no stage directions, no statistics."""
     for attempt in range(1, 4):
         data = groq_json(prompt)
-        scenes = data.get("scenes") or []
-        words = sum(len(str(s.get("narration", "")).split()) for s in scenes)
-        if data.get("title") and data.get("thumbnail_text") and valid_scenes(scenes) and 120 <= words <= 165:
-            for s in scenes:
-                if s["type"] == "step":
-                    s["number"] = str(s.get("number") or "01")
-                    if s.get("icon") not in ICONS:
-                        s["icon"] = "check"
+        for p in data.get("points") or []:
+            if p.get("icon") not in ICONS:
+                p["icon"] = "check"
+        if valid_chapter(data, is_last):
             return data
-        print(f"   Script format sahi nahi tha (words: {words}), dobara try kar raha hoon... ({attempt})")
-    raise SystemExit("Script 3 tries mein bhi sahi nahi bani")
+        print(f"   Chapter {idx + 1} ki length sahi nahi thi, dobara likh raha hoon... ({attempt})")
+    raise SystemExit(f"Chapter {idx + 1} 3 tries mein bhi sahi nahi bana")
 
 
 # ---------- Voice ----------
@@ -374,18 +416,16 @@ def render(scenes, durs, audio, pal, out_path):
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
         "-i", str(audio),
         "-map", "0:v", "-map", "1:a",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k", "-shortest", "-t", str(MAX_SECONDS),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-shortest",
         str(out_path),
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
 
     for f in range(frames):
         T = f / FPS
-        i = 0
-        for k in range(len(starts)):
-            if T >= starts[k]:
-                i = k
+        i = bisect.bisect_right(starts, T) - 1
+        i = max(0, min(i, len(scenes) - 1))
         t = T - starts[i]
         dur = durs[i]
         sc = scenes[i]
@@ -406,9 +446,10 @@ def render(scenes, durs, audio, pal, out_path):
     proc.wait()
     if proc.returncode != 0:
         raise SystemExit("ffmpeg render fail hua")
+    return starts
 
 
-# ---------- Thumbnail (1280x720) ----------
+# ---------- Thumbnail ----------
 def make_thumb(path, pal, text):
     w, h = 1280, 720
     img = make_bg(pal, w, h)
@@ -419,7 +460,7 @@ def make_thumb(path, pal, text):
     d.rounded_rectangle([60, 60, 60 + tw + 40, 60 + th + 26], radius=14, fill=RED)
     d.text((80, 70), "AI TOOLS", font=tf, fill=WHITE)
     f = font(120)
-    lines = wrap(d, text.upper(), f, 900)
+    lines = wrap(d, str(text).upper(), f, 900)
     y = 270 if len(lines) <= 2 else 200
     for i, line in enumerate(lines):
         color = pal["accent"] if i == len(lines) - 1 else WHITE
@@ -439,39 +480,72 @@ def main():
     OUTPUT.mkdir(exist_ok=True)
     history = load_history()
 
-    print("Script bana raha hoon...")
-    data = build_script(history)
-    scenes = data["scenes"]
-    pal = palette_for(data["title"])
+    print("Outline bana raha hoon...")
+    outline = build_outline(history)
+    pal = palette_for(outline["title"])
+
+    chapter_data = []
+    prev_text = ""
+    for i in range(CHAPTER_COUNT):
+        is_last = i == CHAPTER_COUNT - 1
+        print(f"Chapter {i + 1}/{CHAPTER_COUNT} likh raha hoon...")
+        ch = build_chapter(outline, i, prev_text, is_last)
+        chapter_data.append(ch)
+        prev_text = str(ch["chapter_narration"]) + " " + " ".join(str(p["narration"]) for p in ch["points"])
+
+    scenes = []
+    n = len(chapter_data)
+    for ci, (oc, cd) in enumerate(zip(outline["chapters"], chapter_data)):
+        scenes.append({"type": "chapter", "index": ci, "total": n, "num": f"{ci + 1:02d}",
+                       "title": str(oc["title"]), "narration": str(cd["chapter_narration"])})
+        for p in cd["points"]:
+            scenes.append({"type": "point", "chapter": ci + 1, "title": str(p["title"]),
+                           "body": str(p["body"]), "icon": p.get("icon", "check"),
+                           "narration": str(p["narration"])})
+        if ci == n - 1:
+            scenes.append({"type": "outro", "narration": str(cd["outro_narration"])})
 
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder = OUTPUT / f"LONG_MOTION_{stamp}_{slugify(data['title'])}"
+    folder = OUTPUT / f"LONG_MOTION_{stamp}_{slugify(outline['title'])}"
     folder.mkdir(parents=True, exist_ok=True)
 
     full = " ".join(s["narration"] for s in scenes)
     (folder / "script.txt").write_text(full, encoding="utf-8")
+    print(f"Total narration: {word_count(full)} words")
 
     print("Voice bana raha hoon...")
     audio = folder / "voice.mp3"
     make_voice(full, audio)
     total = audio_seconds(audio)
 
-    counts = [max(1, len(s["narration"].split())) for s in scenes]
+    counts = [max(1, word_count(s["narration"])) for s in scenes]
     durs = [total * c / sum(counts) for c in counts]
 
-    print("Video render ho raha hai...")
-    render(scenes, durs, audio, pal, folder / "video.mp4")
+    print("Video render ho raha hai (lambi video hai, 15 se 25 minute lag sakte hain)...")
+    starts = render(scenes, durs, audio, pal, folder / "video.mp4")
 
     print("Thumbnail bana raha hoon...")
-    make_thumb(folder / "thumbnail.jpg", pal, data["thumbnail_text"])
+    make_thumb(folder / "thumbnail.jpg", pal, outline["thumbnail_text"])
 
-    desc = str(data.get("description", "")).strip()
+    chapter_times = []
+    for idx, s in enumerate(scenes):
+        if s["type"] == "chapter":
+            chapter_times.append({"time": fmt_time(starts[idx]), "name": s["title"]})
+    chapter_lines = "\n".join(f"{c['time']} {c['name']}" for c in chapter_times)
+
+    desc = str(outline["description"]).strip()
+    desc += "\n\nChapters:\n" + chapter_lines
     desc += "\n\nThis video is general information. Check each tool's own pricing page before you sign up."
-    meta = {"title": data["title"][:100], "thumbnail_text": data["thumbnail_text"],
-            "description": desc, "tags": data.get("tags", [])}
+    meta = {
+        "title": str(outline["title"])[:100],
+        "thumbnail_text": outline["thumbnail_text"],
+        "description": desc,
+        "tags": outline.get("tags", []),
+        "chapters": chapter_times,
+    }
     (folder / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    history["titles"].append(data["title"])
+    history["titles"].append(outline["title"])
     HISTORY.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Ready: {folder}")
 
