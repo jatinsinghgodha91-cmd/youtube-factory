@@ -1,66 +1,61 @@
-name: Motion Long video (AI channel)
+import asyncio
+import bisect
+import datetime
+import hashlib
+import json
+import math
+import os
+import re
+import subprocess
+import time
+from pathlib import Path
 
-on:
-  schedule:
-    - cron: "0 6 * * *"
-  workflow_dispatch:
+import edge_tts
+import requests
+from gtts import gTTS
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
-permissions:
-  contents: write
+import config
 
-concurrency:
-  group: motion-long
-  cancel-in-progress: false
+ROOT = Path(__file__).resolve().parent
+OUTPUT = ROOT / config.OUTPUT_DIR
+HISTORY = ROOT / "motion_long_history.json"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - name: Code download karo
-        uses: actions/checkout@v4
+W, H = 1920, 1080
+FPS = 24
+VOICE_SPEED = 1.08
+CHAPTER_COUNT = 8
 
-      - name: Python setup karo
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
+PALETTES = [
+    {"bg1": (12, 24, 72), "bg2": (95, 30, 150), "accent": (255, 200, 0)},
+    {"bg1": (0, 58, 66), "bg2": (0, 150, 132), "accent": (255, 110, 64)},
+    {"bg1": (72, 0, 28), "bg2": (175, 26, 56), "accent": (255, 226, 120)},
+    {"bg1": (4, 40, 26), "bg2": (22, 128, 78), "accent": (255, 214, 0)},
+    {"bg1": (10, 10, 16), "bg2": (34, 40, 70), "accent": (0, 222, 255)},
+]
+WHITE = (255, 255, 255)
+GREY = (208, 214, 228)
+DARK = (10, 12, 24)
+TRACK = (40, 46, 80)
+CARD = (18, 26, 56)
+CARD_EDGE = (60, 74, 118)
+RED = (232, 38, 38)
 
-      - name: Font aur ffmpeg install karo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-dejavu-core ffmpeg
+FONT_CANDIDATES = [
+    "C:/Windows/Fonts/arialbd.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+]
+_fonts = {}
 
-      - name: Libraries install karo
-        run: pip install -r requirements.txt
+SYSTEM_PROMPT = """You write clear, accurate YouTube video scripts for a US audience about AI tools for freelancers and small businesses.
+Narration is read aloud by a text-to-speech voice: spoken words only, no stage directions, no emojis.
+Never invent prices, features or statistics. Always return valid JSON only."""
 
-      - name: Motion video banao
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: python motion_ai_long.py
 
-      - name: YouTube par upload karo
-        env:
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: python uploader.py
-
-      - name: Output ko download ke liye save karo
-        uses: actions/upload-artifact@v4
-        with:
-          name: motion-long-${{ github.run_number }}
-          path: output/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: History save karo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add motion_long_history.json
-          if ! git diff --staged --quiet; then
-            git commit -m "Update motion long history after run ${{ github.run_number }}"
-            git pull --rebase
-            git push
-          fi
+# ---------- Basic helpers ----------
+def font(size):
+    if size not in _fonts:
+        path = next((p for p in FONT_CANDIDATES if Path(p).exists()), None)
+        _fonts[size] =
