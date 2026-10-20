@@ -198,10 +198,19 @@ def draw_caption(d, narration, t, dur):
     start = (idx // 6) * 6
     group = " ".join(words[start:start + 6])
     f = font(50)
-    tw, th = text_size(d, group, f)
-    x, y = (W - tw) // 2, H - 190
-    d.rounded_rectangle([x - 30, y - 16, x + tw + 30, y + th + 16], radius=16, fill=DARK)
-    d.text((x, y), group, font=f, fill=WHITE)
+    lines = wrap(d, group, f, W - 300)[:2]
+    line_h = text_size(d, "Ag", f)[1] + 14
+    box_w = max(text_size(d, line, f)[0] for line in lines) + 70
+    box_h = line_h * len(lines) + 22
+    bottom = H - 48
+    top = bottom - box_h
+    left = (W - box_w) // 2
+    d.rounded_rectangle([left, top, left + box_w, top + box_h], radius=18, fill=DARK)
+    y = top + 11
+    for line in lines:
+        tw, _ = text_size(d, line, f)
+        d.text(((W - tw) // 2, y), line, font=f, fill=WHITE)
+        y += line_h
 
 
 def scene_chapter(d, sc, t, pal):
