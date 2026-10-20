@@ -220,39 +220,37 @@ def scene_hook(d, sc, t, pal):
 def scene_step(d, sc, t, pal):
     p = ease(t / 0.7)
     off = int((1 - p) * 80)
-    center(d, sc["number"], font(240), 200 + off, pal["accent"], stroke=6)
-    cy = 720 + off
-    d.ellipse([W // 2 - 170, cy - 170, W // 2 + 170, cy + 170], fill=DARK, outline=pal["accent"], width=10)
-    ICONS.get(sc.get("icon"), icon_check)(d, W // 2, cy, 105, pal["accent"])
-    ft = font(96)
-    y = 1000 + off
-    for line in wrap(d, sc["title"].upper(), ft, W - 140):
-        center(d, line, ft, y, WHITE, stroke=6)
-        y += 110
-    fb = font(54)
-    y += 16
-    for line in wrap(d, sc["body"], fb, W - 220):
+    center(d, sc["number"], font(200), 160 + off, pal["accent"], stroke=6)
+    cy = 620 + off
+    d.ellipse([W // 2 - 150, cy - 150, W // 2 + 150, cy + 150], fill=DARK, outline=pal["accent"], width=10)
+    ICONS.get(sc.get("icon"), icon_check)(d, W // 2, cy, 95, pal["accent"])
+    ft = font(80)
+    y = 860 + off
+    for line in wrap(d, sc["title"].upper(), ft, W - 160)[:2]:
+        center(d, line, ft, y, WHITE, stroke=5)
+        y += 96
+    fb = font(46)
+    y += 14
+    for line in wrap(d, sc["body"], fb, W - 240)[:3]:
         center(d, line, fb, y, GREY)
-        y += 70
-
+        y += 60
 
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
-    center(d, "FOLLOW FOR MORE", font(88), 520 + int((1 - p) * 50), pal["accent"], stroke=6)
-    y = 650
-    for line in wrap(d, sc["body"], font(50), W - 260):
-        center(d, line, font(50), y, GREY)
-        y += 68
+    y0 = 420 + int((1 - p) * 40)
+    for line in wrap(d, "FOLLOW FOR MORE", font(78), W - 160):
+        center(d, line, font(78), y0, pal["accent"], stroke=6)
+        y0 += 92
+    y = y0 + 30
+    for line in wrap(d, sc["body"], font(46), W - 240)[:4]:
+        center(d, line, font(46), y, GREY)
+        y += 62
     if t > 1.8:
-        x0 = (W - 480) // 2
-        d.rounded_rectangle([x0, 1000, x0 + 480, 1090], radius=45, fill=(232, 38, 38))
-        f = font(48)
+        x0 = (W - 460) // 2
+        d.rounded_rectangle([x0, 1050, x0 + 460, 1130], radius=40, fill=(232, 38, 38))
+        f = font(44)
         w, h = text_size(d, "SUBSCRIBE", f)
-        d.text((x0 + (480 - w) // 2, 1000 + (90 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
-
-
-SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
-
+        d.text((x0 + (460 - w) // 2, 1050 + (80 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
 # ---------- Groq script ----------
 def groq_json(user_prompt):
