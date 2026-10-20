@@ -184,13 +184,19 @@ def draw_caption(d, narration, t, dur):
     start = (idx // 5) * 5
     group = " ".join(words[start:start + 5])
     f = font(54)
-    y = H - 430
-    for line in wrap(d, group, f, W - 180):
-        tw, th = text_size(d, line, f)
-        x = (W - tw) // 2
-        d.rounded_rectangle([x - 28, y - 14, x + tw + 28, y + th + 14], radius=16, fill=DARK)
-        d.text((x, y), line, font=f, fill=WHITE)
-        y += th + 40
+    lines = wrap(d, group, f, W - 200)[:2]
+    line_h = text_size(d, "Ag", f)[1] + 14
+    box_w = max(text_size(d, line, f)[0] for line in lines) + 70
+    box_h = line_h * len(lines) + 22
+    bottom = H - 300
+    top = bottom - box_h
+    left = (W - box_w) // 2
+    d.rounded_rectangle([left, top, left + box_w, top + box_h], radius=16, fill=DARK)
+    y = top + 11
+    for line in lines:
+        tw, _ = text_size(d, line, f)
+        d.text(((W - tw) // 2, y), line, font=f, fill=WHITE)
+        y += line_h
 
 
 def scene_hook(d, sc, t, pal):
