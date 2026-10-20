@@ -8,10 +8,10 @@ import requests
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "output"
-GRAPH = "https://graph.facebook.com/v21.0"
+GRAPH = "https://graph.instagram.com/v21.0"
 
 IG_USER_ID = os.environ["IG_USER_ID"]
-IG_TOKEN = os.environ["IG_ACCESS_TOKEN"]
+IG_TOKEN = os.environ["IG_ACCESS_TOKEN"].strip()
 MEDIA_REPO = os.environ["MEDIA_REPO"]
 MEDIA_TOKEN = os.environ["MEDIA_REPO_TOKEN"]
 GH_API = f"https://api.github.com/repos/{MEDIA_REPO}/contents"
