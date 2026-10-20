@@ -238,17 +238,17 @@ def scene_step(d, sc, t, pal):
 
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
-    center(d, "FOLLOW FOR MORE", font(110), 560 + int((1 - p) * 50), pal["accent"], stroke=8)
-    y = 730
-    for line in wrap(d, sc["body"], font(56), W - 200):
-        center(d, line, font(56), y, GREY)
-        y += 74
+    center(d, "FOLLOW FOR MORE", font(88), 520 + int((1 - p) * 50), pal["accent"], stroke=6)
+    y = 650
+    for line in wrap(d, sc["body"], font(50), W - 260):
+        center(d, line, font(50), y, GREY)
+        y += 68
     if t > 1.8:
-        x0 = (W - 520) // 2
-        d.rounded_rectangle([x0, 1000, x0 + 520, 1110], radius=55, fill=(232, 38, 38))
-        f = font(56)
+        x0 = (W - 480) // 2
+        d.rounded_rectangle([x0, 1000, x0 + 480, 1090], radius=45, fill=(232, 38, 38))
+        f = font(48)
         w, h = text_size(d, "SUBSCRIBE", f)
-        d.text((x0 + (520 - w) // 2, 1000 + (110 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
+        d.text((x0 + (480 - w) // 2, 1000 + (90 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
 
 SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
