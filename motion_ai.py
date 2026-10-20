@@ -184,11 +184,11 @@ def draw_caption(d, narration, t, dur):
     start = (idx // 5) * 5
     group = " ".join(words[start:start + 5])
     f = font(54)
-    lines = wrap(d, group, f, W - 200)[:2]
+    lines = wrap(d, group, f, W - 220)[:2]
     line_h = text_size(d, "Ag", f)[1] + 14
     box_w = max(text_size(d, line, f)[0] for line in lines) + 70
     box_h = line_h * len(lines) + 22
-    bottom = H - 300
+    bottom = H - 420
     top = bottom - box_h
     left = (W - box_w) // 2
     d.rounded_rectangle([left, top, left + box_w, top + box_h], radius=16, fill=DARK)
