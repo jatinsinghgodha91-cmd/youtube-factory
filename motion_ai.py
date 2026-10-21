@@ -165,7 +165,7 @@ ICONS = {"check": icon_check, "bolt": icon_bolt, "clock": icon_clock, "dollar": 
          "gear": icon_gear, "star": icon_star, "arrow": icon_arrow}
 
 
-# ---------- Header, caption, scenes ----------
+# ---------- Header and caption ----------
 def draw_header(d, pal, progress):
     label = "AI TOOLS"
     f = font(44)
@@ -199,6 +199,7 @@ def draw_caption(d, narration, t, dur):
         y += line_h
 
 
+# ---------- Scenes ----------
 def scene_hook(d, sc, t, pal):
     p = ease(t / 0.8)
     pulse = 1 + 0.05 * math.sin(t * 5)
@@ -235,6 +236,7 @@ def scene_step(d, sc, t, pal):
         center(d, line, fb, y, GREY)
         y += 60
 
+
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
     y0 = 420 + int((1 - p) * 40)
@@ -251,6 +253,10 @@ def scene_outro(d, sc, t, pal):
         f = font(44)
         w, h = text_size(d, "SUBSCRIBE", f)
         d.text((x0 + (460 - w) // 2, 1050 + (80 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
+
+
+SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
+
 
 # ---------- Groq script ----------
 def groq_json(user_prompt):
