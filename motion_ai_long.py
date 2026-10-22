@@ -202,7 +202,7 @@ def draw_caption(d, narration, t, dur):
     line_h = text_size(d, "Ag", f)[1] + 14
     box_w = max(text_size(d, line, f)[0] for line in lines) + 70
     box_h = line_h * len(lines) + 22
-    bottom = H - 48
+    bottom = H - 80
     top = bottom - box_h
     left = (W - box_w) // 2
     d.rounded_rectangle([left, top, left + box_w, top + box_h], radius=18, fill=DARK)
