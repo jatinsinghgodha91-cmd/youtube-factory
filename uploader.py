@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import config
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / config.OUTPUT_DIR
+LOG_FILE = ROOT / "video_log.json"
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
@@ -75,7 +77,27 @@ def set_thumbnail(yt, video_id: str, thumb_path: Path):
     ).execute()
 
 
+def load_log():
+    if LOG_FILE.exists():
+        try:
+            return json.loads(LOG_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def save_log(entries):
+    LOG_FILE.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def main():
+    log = load_log()
+    save_log(log)
+
+    if not OUTPUT.exists():
+        print("output folder nahi mila, upload skip")
+        return
+
     yt = get_youtube()
     done, failed = 0, 0
 
@@ -95,27 +117,4 @@ def main():
         print(f"Upload ho raha hai: {folder.name}")
         try:
             vid = upload_video(yt, video, meta)
-        except HttpError as e:
-            print(f"   ❌ Upload fail: {e}")
-            failed += 1
-            continue
-
-        if is_long and (folder / "thumbnail.jpg").exists():
-            try:
-                set_thumbnail(yt, vid, folder / "thumbnail.jpg")
-                print("   Thumbnail laga diya")
-            except HttpError as e:
-                print(f"   Thumbnail skip (channel verify hai?): {e}")
-
-        info = {"video_id": vid, "url": f"https://youtu.be/{vid}"}
-        (folder / "uploaded.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
-        print(f"   ✅ https://youtu.be/{vid}")
-        done += 1
-
-    print(f"Upload complete. Successful: {done}, Failed: {failed}")
-    if failed and not done:
-        raise SystemExit(1)
-
-
-if __name__ == "__main__":
-    main()
+        except HttpError as
