@@ -34,6 +34,14 @@ jobs:
       - name: Libraries install karo
         run: pip install -r requirements.txt
 
+      - name: Analytics se topic hint banao
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python analytics_pick.py
+
       - name: Motion Short banao
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -62,13 +70,14 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: History save karo
+      - name: History aur video log save karo
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add motion_history.json
+          git add motion_history.json video_log.json topic_hint.json
           if ! git diff --staged --quiet; then
-            git commit -m "Update motion history after run ${{ github.run_number }}"
+            git commit -m "Update history, log and topic hint after run ${{ github.run_number }}"
             git pull --rebase
             git push
           fi
