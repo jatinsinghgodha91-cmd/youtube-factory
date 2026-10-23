@@ -117,4 +117,40 @@ def main():
         print(f"Upload ho raha hai: {folder.name}")
         try:
             vid = upload_video(yt, video, meta)
-        except HttpError as
+        except HttpError as e:
+            print(f"   ❌ Upload fail: {e}")
+            failed += 1
+            continue
+
+        if is_long and (folder / "thumbnail.jpg").exists():
+            try:
+                set_thumbnail(yt, vid, folder / "thumbnail.jpg")
+                print("   Thumbnail laga diya")
+            except HttpError as e:
+                print(f"   Thumbnail skip: {e}")
+
+        url = f"https://youtu.be/{vid}"
+        (folder / "uploaded.json").write_text(
+            json.dumps({"video_id": vid, "url": url}, indent=2), encoding="utf-8"
+        )
+
+        log.append({
+            "video_id": vid,
+            "url": url,
+            "kind": folder.name.split("_")[0],
+            "title": meta.get("title", ""),
+            "folder": folder.name,
+            "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        })
+        save_log(log)
+
+        print(f"   ✅ {url}")
+        done += 1
+
+    print(f"Upload complete. Successful: {done}, Failed: {failed}")
+    if failed and not done:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
