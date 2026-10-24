@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import re
 import subprocess
 import time
@@ -19,11 +20,14 @@ import config
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / config.OUTPUT_DIR
 HISTORY = ROOT / "motion_history.json"
+HINT_FILE = ROOT / "topic_hint.json"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+HINT_CHANCE = 0.6
 
 W, H = 1080, 1920
 FPS = 30
 MAX_SECONDS = 58
+VOICE_SPEED = 1.08
 
 PALETTES = [
     {"bg1": (12, 24, 72), "bg2": (95, 30, 150), "accent": (255, 200, 0)},
@@ -36,6 +40,7 @@ WHITE = (255, 255, 255)
 GREY = (208, 214, 228)
 DARK = (10, 12, 24)
 TRACK = (40, 46, 80)
+RED = (232, 38, 38)
 
 FONT_CANDIDATES = [
     "C:/Windows/Fonts/arialbd.ttf",
@@ -44,7 +49,7 @@ FONT_CANDIDATES = [
 ]
 _fonts = {}
 
-SYSTEM_PROMPT = """You write short, clear, accurate YouTube Shorts scripts for a US audience.
+SYSTEM_PROMPT = """You write short, clear, accurate YouTube Shorts tutorial scripts for a US audience.
 Narration is read aloud by a text-to-speech voice: spoken words only.
 Never invent prices, features or statistics. Always return valid JSON only."""
 
@@ -165,6 +170,30 @@ ICONS = {"check": icon_check, "bolt": icon_bolt, "clock": icon_clock, "dollar": 
          "gear": icon_gear, "star": icon_star, "arrow": icon_arrow}
 
 
+# ---------- Screen mockup (tutorial look) ----------
+def draw_mockup(d, x, y, w, h, pal, label, progress):
+    d.rounded_rectangle([x, y, x + w, y + h], radius=22, fill=(246, 248, 252), outline=(190, 198, 216), width=3)
+    d.rounded_rectangle([x, y, x + w, y + 52], radius=22, fill=(222, 228, 240))
+    d.rectangle([x, y + 30, x + w, y + 52], fill=(222, 228, 240))
+    for i, c in enumerate([(255, 95, 87), (255, 189, 46), (40, 201, 64)]):
+        d.ellipse([x + 22 + i * 26, y + 17, x + 38 + i * 26, y + 33], fill=c)
+    rows = 4
+    spacing = (h - 180) // rows
+    for i in range(rows):
+        appear = ease(progress * rows - i)
+        if appear <= 0:
+            continue
+        ry = y + 90 + i * spacing
+        bar_w = int((w - 80) * appear)
+        d.rounded_rectangle([x + 40, ry, x + 40 + bar_w, ry + 26], radius=13, fill=(196, 204, 222))
+    by = y + h - 104
+    d.rounded_rectangle([x + 40, by, x + w - 40, by + 66], radius=18, fill=pal["accent"])
+    f = font(36)
+    text = str(label).upper()[:18]
+    tw, th = text_size(d, text, f)
+    d.text((x + (w - tw) // 2, by + (66 - th) // 2 - 4), text, font=f, fill=DARK)
+
+
 # ---------- Header and caption ----------
 def draw_header(d, pal, progress):
     label = "AI TOOLS"
@@ -221,12 +250,10 @@ def scene_hook(d, sc, t, pal):
 def scene_step(d, sc, t, pal):
     p = ease(t / 0.7)
     off = int((1 - p) * 80)
-    center(d, sc["number"], font(200), 160 + off, pal["accent"], stroke=6)
-    cy = 620 + off
-    d.ellipse([W // 2 - 150, cy - 150, W // 2 + 150, cy + 150], fill=DARK, outline=pal["accent"], width=10)
-    ICONS.get(sc.get("icon"), icon_check)(d, W // 2, cy, 95, pal["accent"])
+    center(d, sc["number"], font(200), 120 + off, pal["accent"], stroke=6)
+    draw_mockup(d, 90, 420 + off, 900, 600, pal, sc.get("ui_label", "NEXT"), ease((t - 0.3) / 1.2))
     ft = font(80)
-    y = 860 + off
+    y = 1100 + off
     for line in wrap(d, sc["title"].upper(), ft, W - 160)[:2]:
         center(d, line, ft, y, WHITE, stroke=5)
         y += 96
@@ -239,23 +266,47 @@ def scene_step(d, sc, t, pal):
 
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
-    y0 = 420 + int((1 - p) * 40)
-    for line in wrap(d, "FOLLOW FOR MORE", font(78), W - 160):
-        center(d, line, font(78), y0, pal["accent"], stroke=6)
-        y0 += 92
-    y = y0 + 30
-    for line in wrap(d, sc["body"], font(46), W - 240)[:4]:
-        center(d, line, font(46), y, GREY)
-        y += 62
+    center(d, "FOLLOW FOR MORE", font(88), 520 + int((1 - p) * 50), pal["accent"], stroke=6)
+    y = 650
+    for line in wrap(d, sc["body"], font(50), W - 260)[:3]:
+        center(d, line, font(50), y, GREY)
+        y += 68
     if t > 1.8:
-        x0 = (W - 460) // 2
-        d.rounded_rectangle([x0, 1050, x0 + 460, 1130], radius=40, fill=(232, 38, 38))
-        f = font(44)
+        x0 = (W - 480) // 2
+        d.rounded_rectangle([x0, 1000, x0 + 480, 1090], radius=45, fill=RED)
+        f = font(48)
         w, h = text_size(d, "SUBSCRIBE", f)
-        d.text((x0 + (460 - w) // 2, 1050 + (80 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
+        d.text((x0 + (480 - w) // 2, 1000 + (90 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
 
 SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
+
+
+# ---------- Analytics topic hint ----------
+def load_hint():
+    if HINT_FILE.exists():
+        try:
+            data = json.loads(HINT_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def hint_text_for_prompt():
+    hint = load_hint()
+    top = [str(t) for t in hint.get("top_titles", []) if str(t).strip()]
+    suggested = [str(t) for t in hint.get("suggested_topics", []) if str(t).strip()]
+    parts = []
+    if top:
+        lines = "\n".join(f"- {t}" for t in top[:5])
+        parts.append(
+            "These titles performed best on this channel recently. Learn the style and topic area, "
+            "but do NOT copy them:\n" + lines
+        )
+    if suggested and random.random() < HINT_CHANCE:
+        parts.append(f"Preferred topic direction for this video: {random.choice(suggested)}")
+    return "\n\n".join(parts)
 
 
 # ---------- Groq script ----------
@@ -311,7 +362,7 @@ def build_script(history):
     prompt = (
         f"Niche: {config.NICHE}\n"
         "Language: English (US audience)\n\n"
-        "Make ONE vertical YouTube Shorts script, about 50 seconds when spoken. "
+        "Make ONE vertical YouTube Shorts TUTORIAL script, about 50 seconds when spoken. "
         "Total spoken words across all narration: 120 to 135.\n\n"
         "Topic: one specific, practical AI tool or AI workflow that saves a freelancer or small business "
         "time or money this week. It must be clearly different from these past titles:\n"
@@ -319,9 +370,11 @@ def build_script(history):
         "Rules:\n"
         "- Use only well-known tools. Never invent prices, features or statistics. "
         "For pricing, say 'check their pricing page'.\n"
-        "- Each step must be one concrete action the viewer can do today.\n"
+        "- Each step must be one concrete action the viewer can do today, shown as a real screen.\n"
         "- Narration is spoken words only. No emojis, no stage directions.\n"
         "- For step scenes, icon must be one of: bolt, check, clock, dollar, gear, star, arrow.\n"
+        "- For step scenes, ui_label is the 1 to 2 word text on the button the viewer clicks, "
+        "all caps (for example: CREATE, SAVE, SEND, DOWNLOAD, CONNECT).\n"
         "- Hook title: max 6 words. Step titles: max 4 words.\n"
         "- Body: max 12 words for hook, max 14 words for each step, max 16 words for outro.\n\n"
         "Return JSON with exactly these keys: title, description, tags, scenes.\n"
@@ -329,9 +382,13 @@ def build_script(history):
         "description: 2 short sentences, then 3 relevant hashtags.\n"
         "tags: a list of 8 to 12 tags.\n"
         "scenes: a list of exactly 5 objects in this order: hook, step, step, step, outro.\n"
-        "Each scene object has: type, title, body, narration. Step scenes also have: number (01, 02, 03) and icon.\n"
+        "Each scene object has: type, title, body, narration. Step scenes also have: number (01, 02, 03), "
+        "icon and ui_label.\n"
         "The outro has type, body and narration (title can be empty)."
     )
+    hint = hint_text_for_prompt()
+    if hint:
+        prompt += "\n\n" + hint
     for attempt in range(1, 4):
         data = groq_json(prompt)
         scenes = data.get("scenes") or []
@@ -342,6 +399,7 @@ def build_script(history):
                     s["number"] = str(s.get("number") or "01")
                     if s.get("icon") not in ICONS:
                         s["icon"] = "check"
+                    s["ui_label"] = str(s.get("ui_label") or "NEXT")[:18]
             return data
         print(f"   Script format sahi nahi tha (words: {words}), dobara try kar raha hoon... ({attempt})")
     raise SystemExit("Motion script 3 tries mein bhi sahi nahi bana")
@@ -349,7 +407,7 @@ def build_script(history):
 
 # ---------- Voice ----------
 async def _tts(text, path):
-    rate = f"+{round((config.VOICE_SPEED - 1) * 100)}%"
+    rate = f"+{round((VOICE_SPEED - 1) * 100)}%"
     await edge_tts.Communicate(text, config.VOICE, rate=rate).save(str(path))
 
 
@@ -362,7 +420,7 @@ def make_voice(text, path):
         gTTS(text=text, lang="en", tld="com").save(str(raw))
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
-             "-filter:a", f"atempo={config.VOICE_SPEED}", str(path)],
+             "-filter:a", f"atempo={VOICE_SPEED}", str(path)],
             check=True,
         )
         raw.unlink()
