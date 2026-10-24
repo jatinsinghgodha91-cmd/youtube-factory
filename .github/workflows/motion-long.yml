@@ -71,6 +71,13 @@ jobs:
           [ -f video_log.json ] && git add video_log.json || true
           if ! git diff --staged --quiet; then
             git commit -m "Update motion long history, log and topic hint after run ${{ github.run_number }}"
-            git pull --rebase
-            git push
+            for i in 1 2 3 4 5; do
+              if git pull --rebase -X theirs && git push; then
+                echo "Push ho gaya"
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
           fi
+          
