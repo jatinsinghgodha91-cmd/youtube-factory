@@ -54,6 +54,13 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: python uploader.py
 
+      - name: Facebook Page par long video post karo
+        if: always()
+        continue-on-error: true
+        env:
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: python facebook_post.py long
+
       - name: Output ko download ke liye save karo
         uses: actions/upload-artifact@v4
         with:
@@ -80,4 +87,3 @@ jobs:
               sleep 5
             done
           fi
-          
