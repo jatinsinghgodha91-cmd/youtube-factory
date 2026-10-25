@@ -9,12 +9,12 @@ ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "output"
 GRAPH = "https://graph.facebook.com/v21.0"
 GRAPH_VIDEO = "https://graph-video.facebook.com/v21.0"
-PAGE_ID = os.environ["FB_PAGE_ID"].strip()
+PAGE_NAME = "AI Freelancer Toolkit"
 USER_TOKEN = os.environ["FB_PAGE_TOKEN"].strip()
 KIND = sys.argv[1] if len(sys.argv) > 1 else "short"
 
 
-def get_page_token():
+def get_page_token_and_id():
     r = requests.get(
         f"{GRAPH}/me/accounts",
         params={"fields": "id,name,access_token", "limit": 100, "access_token": USER_TOKEN},
@@ -25,12 +25,9 @@ def get_page_token():
     pages = r.json().get("data", [])
     print("Token ko ye Pages dikh rahi hain:", [(p.get("id"), p.get("name")) for p in pages])
     for p in pages:
-        if str(p.get("id")) == PAGE_ID:
-            return p["access_token"]
-    raise SystemExit(
-        "AI Freelancer Toolkit Page is token ko assign nahi hai. "
-        "Business settings mein autopost ko Page ka access dein, phir naya token banayein."
-    )
+        if str(p.get("name", "")).strip().lower() == PAGE_NAME.lower():
+            return p["id"], p["access_token"]
+    raise SystemExit("AI Freelancer Toolkit Page token ki list mein nahi mili")
 
 
 def find_video():
@@ -46,7 +43,8 @@ def find_video():
 
 
 def main():
-    page_token = get_page_token()
+    page_id, page_token = get_page_token_and_id()
+    print(f"Page mil gayi, ID: {page_id}")
     folder, video = find_video()
     meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     title = str(meta.get("title", ""))[:100]
@@ -57,7 +55,7 @@ def main():
     print("Facebook Page par video upload kar raha hoon...")
     with video.open("rb") as f:
         r = requests.post(
-            f"{GRAPH_VIDEO}/{PAGE_ID}/videos",
+            f"{GRAPH_VIDEO}/{page_id}/videos",
             data={"title": title, "description": desc, "access_token": page_token},
             files={"source": f},
             timeout=900,
