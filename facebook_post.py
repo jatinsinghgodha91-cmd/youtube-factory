@@ -10,17 +10,27 @@ OUTPUT = ROOT / "output"
 GRAPH = "https://graph.facebook.com/v21.0"
 GRAPH_VIDEO = "https://graph-video.facebook.com/v21.0"
 PAGE_ID = os.environ["FB_PAGE_ID"].strip()
-PAGE_TOKEN = os.environ["FB_PAGE_TOKEN"].strip()
+USER_TOKEN = os.environ["FB_PAGE_TOKEN"].strip()
 KIND = sys.argv[1] if len(sys.argv) > 1 else "short"
 
 
-def check_token():
-    r = requests.get(f"{GRAPH}/me", params={"fields": "id,name", "access_token": PAGE_TOKEN}, timeout=60)
-    print("TOKEN KIS KA HAI:", r.text)
-    r2 = requests.get(f"{GRAPH}/{PAGE_ID}", params={"fields": "id,name", "access_token": PAGE_TOKEN}, timeout=60)
-    print("PAGE CHECK:", r2.text)
-    if r2.status_code != 200:
-        raise SystemExit("Page ID ya token Page ke saath nahi jud rahe. Upar ka PAGE CHECK line bhejo.")
+def get_page_token():
+    r = requests.get(
+        f"{GRAPH}/me/accounts",
+        params={"fields": "id,name,access_token", "limit": 100, "access_token": USER_TOKEN},
+        timeout=60,
+    )
+    if r.status_code != 200:
+        raise SystemExit(f"me/accounts error: {r.text}")
+    pages = r.json().get("data", [])
+    print("Token ko ye Pages dikh rahi hain:", [(p.get("id"), p.get("name")) for p in pages])
+    for p in pages:
+        if str(p.get("id")) == PAGE_ID:
+            return p["access_token"]
+    raise SystemExit(
+        "AI Freelancer Toolkit Page is token ko assign nahi hai. "
+        "Business settings mein autopost ko Page ka access dein, phir naya token banayein."
+    )
 
 
 def find_video():
@@ -36,7 +46,7 @@ def find_video():
 
 
 def main():
-    check_token()
+    page_token = get_page_token()
     folder, video = find_video()
     meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     title = str(meta.get("title", ""))[:100]
@@ -48,7 +58,7 @@ def main():
     with video.open("rb") as f:
         r = requests.post(
             f"{GRAPH_VIDEO}/{PAGE_ID}/videos",
-            data={"title": title, "description": desc, "access_token": PAGE_TOKEN},
+            data={"title": title, "description": desc, "access_token": page_token},
             files={"source": f},
             timeout=900,
         )
