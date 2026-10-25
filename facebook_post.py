@@ -7,10 +7,20 @@ import requests
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "output"
+GRAPH = "https://graph.facebook.com/v21.0"
 GRAPH_VIDEO = "https://graph-video.facebook.com/v21.0"
 PAGE_ID = os.environ["FB_PAGE_ID"].strip()
 PAGE_TOKEN = os.environ["FB_PAGE_TOKEN"].strip()
 KIND = sys.argv[1] if len(sys.argv) > 1 else "short"
+
+
+def check_token():
+    r = requests.get(f"{GRAPH}/me", params={"fields": "id,name", "access_token": PAGE_TOKEN}, timeout=60)
+    print("TOKEN KIS KA HAI:", r.text)
+    r2 = requests.get(f"{GRAPH}/{PAGE_ID}", params={"fields": "id,name", "access_token": PAGE_TOKEN}, timeout=60)
+    print("PAGE CHECK:", r2.text)
+    if r2.status_code != 200:
+        raise SystemExit("Page ID ya token Page ke saath nahi jud rahe. Upar ka PAGE CHECK line bhejo.")
 
 
 def find_video():
@@ -26,6 +36,7 @@ def find_video():
 
 
 def main():
+    check_token()
     folder, video = find_video()
     meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     title = str(meta.get("title", ""))[:100]
