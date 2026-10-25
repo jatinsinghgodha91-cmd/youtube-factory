@@ -62,6 +62,14 @@ jobs:
           MEDIA_REPO_TOKEN: ${{ secrets.MEDIA_REPO_TOKEN }}
         run: python instagram_post.py
 
+      - name: Facebook Page par post karo
+        if: always()
+        continue-on-error: true
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: python facebook_post.py short
+
       - name: Output ko download ke liye save karo
         uses: actions/upload-artifact@v4
         with:
