@@ -192,11 +192,27 @@
     "uploaded_at": "2026-10-29T08:23:17+00:00"
   },
   {
-    "video_id": "Z7NPU8LSlgs",
-    "url": "https://youtu.be/Z7NPU8LSlgs",
+    "video_id": "mwTBwnWcGdo",
+    "url": "https://youtu.be/mwTBwnWcGdo",
+    "kind": "SHORT",
+    "title": "Add AI Captions to Loom Videos in Seconds",
+    "folder": "SHORT_MOTION_20261031_182904_add-ai-captions-to-loom-videos-in-seconds",
+    "uploaded_at": "2026-10-31T18:30:26+00:00"
+  },
+  {
+    "video_id": "i2p9NHhuRsg",
+    "url": "https://youtu.be/i2p9NHhuRsg",
+    "kind": "SHORT",
+    "title": "Create Pro Ad Graphics in Seconds with Adobe Firefly",
+    "folder": "SHORT_MOTION_20261031_183809_create-pro-ad-graphics-in-seconds-with-adobe-firef",
+    "uploaded_at": "2026-10-31T18:39:10+00:00"
+  },
+  {
+    "video_id": "3k-gWE1n4q0",
+    "url": "https://youtu.be/3k-gWE1n4q0",
     "kind": "LONG",
-    "title": "AI Workflow to Turn Client Briefs into Finished Projects Fast",
-    "folder": "LONG_MOTION_20261031_183141_ai-workflow-to-turn-client-briefs-into-finished-pr",
-    "uploaded_at": "2026-10-31T18:47:03+00:00"
+    "title": "AI Tools to Automate Freelance Accounting & Invoicing",
+    "folder": "LONG_MOTION_20261031_185138_ai-tools-to-automate-freelance-accounting-invoicin",
+    "uploaded_at": "2026-10-31T19:02:03+00:00"
   }
 ]
