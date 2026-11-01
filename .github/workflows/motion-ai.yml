@@ -34,7 +34,7 @@ jobs:
       - name: Libraries install karo
         run: pip install -r requirements.txt
 
-      - name: Analytics se topic hint banao
+      - name: Analytics aur comments se topic hint banao
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
@@ -66,7 +66,6 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
         run: python facebook_post.py short
 
@@ -78,15 +77,16 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: History aur video log save karo
+      - name: History, log, hint aur comments save karo
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add motion_history.json topic_hint.json
           [ -f video_log.json ] && git add video_log.json || true
+          [ -d comments ] && git add comments || true
           if ! git diff --staged --quiet; then
-            git commit -m "Update history, log and topic hint after run ${{ github.run_number }}"
+            git commit -m "Update history, log, hint and comments after run ${{ github.run_number }}"
             for i in 1 2 3 4 5; do
               if git pull --rebase -X theirs && git push; then
                 echo "Push ho gaya"
