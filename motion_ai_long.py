@@ -487,8 +487,9 @@ def render(scenes, durs, audio, pal, out_path):
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
         "-i", str(audio),
         "-map", "0:v", "-map", "1:a",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k", "-shortest",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-c:a", "aac", "-b:a", "192k", "-shortest",
         str(out_path),
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -593,7 +594,7 @@ def main():
     counts = [max(1, word_count(s["narration"])) for s in scenes]
     durs = [total * c / sum(counts) for c in counts]
 
-    print("Video render ho raha hai (lambi video hai, 15 se 25 minute lag sakte hain)...")
+    print("Video render ho raha hai (high quality mein 40 se 60 minute lag sakte hain)...")
     starts = render(scenes, durs, audio, pal, folder / "video.mp4")
 
     print("Thumbnail bana raha hoon...")
