@@ -23,6 +23,8 @@ HISTORY = ROOT / "motion_history.json"
 HINT_FILE = ROOT / "topic_hint.json"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 HINT_CHANCE = 0.6
+WEBSITE_URL = "jatinsinghgodha91-cmd.github.io/invoice-tool"
+WEBSITE_NAME = "our free invoice tool"
 
 W, H = 1080, 1920
 FPS = 30
@@ -54,7 +56,6 @@ Narration is read aloud by a text-to-speech voice: spoken words only.
 Never invent prices, features or statistics. Always return valid JSON only."""
 
 
-# ---------- Basic helpers ----------
 def font(size):
     if size not in _fonts:
         path = next((p for p in FONT_CANDIDATES if Path(p).exists()), None)
@@ -116,7 +117,6 @@ def make_bg(pal):
     return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 
-# ---------- Icons ----------
 def icon_check(d, cx, cy, s, c):
     d.line([(cx - s * 0.5, cy), (cx - s * 0.15, cy + s * 0.42), (cx + s * 0.5, cy - s * 0.38)],
            fill=c, width=max(4, int(s * 0.2)), joint="curve")
@@ -170,7 +170,6 @@ ICONS = {"check": icon_check, "bolt": icon_bolt, "clock": icon_clock, "dollar": 
          "gear": icon_gear, "star": icon_star, "arrow": icon_arrow}
 
 
-# ---------- Screen mockup (tutorial look) ----------
 def draw_mockup(d, x, y, w, h, pal, label, progress):
     d.rounded_rectangle([x, y, x + w, y + h], radius=22, fill=(246, 248, 252), outline=(190, 198, 216), width=3)
     d.rounded_rectangle([x, y, x + w, y + 52], radius=22, fill=(222, 228, 240))
@@ -194,7 +193,6 @@ def draw_mockup(d, x, y, w, h, pal, label, progress):
     d.text((x + (w - tw) // 2, by + (66 - th) // 2 - 4), text, font=f, fill=DARK)
 
 
-# ---------- Header and caption ----------
 def draw_header(d, pal, progress):
     label = "AI TOOLS"
     f = font(44)
@@ -228,7 +226,6 @@ def draw_caption(d, narration, t, dur):
         y += line_h
 
 
-# ---------- Scenes ----------
 def scene_hook(d, sc, t, pal):
     p = ease(t / 0.8)
     pulse = 1 + 0.05 * math.sin(t * 5)
@@ -266,23 +263,25 @@ def scene_step(d, sc, t, pal):
 
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
-    center(d, "FOLLOW FOR MORE", font(88), 520 + int((1 - p) * 50), pal["accent"], stroke=6)
-    y = 650
+    center(d, "FOLLOW FOR MORE", font(88), 430 + int((1 - p) * 50), pal["accent"], stroke=6)
+    y = 560
     for line in wrap(d, sc["body"], font(50), W - 260)[:3]:
         center(d, line, font(50), y, GREY)
         y += 68
+    if t > 1.0:
+        center(d, "Try it free at", font(44), 800, GREY)
+        center(d, WEBSITE_URL, font(50), 860, pal["accent"], stroke=4)
     if t > 1.8:
         x0 = (W - 480) // 2
-        d.rounded_rectangle([x0, 1000, x0 + 480, 1090], radius=45, fill=RED)
+        d.rounded_rectangle([x0, 1200, x0 + 480, 1290], radius=45, fill=RED)
         f = font(48)
         w, h = text_size(d, "SUBSCRIBE", f)
-        d.text((x0 + (480 - w) // 2, 1000 + (90 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
+        d.text((x0 + (480 - w) // 2, 1200 + (90 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
 
 SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
 
 
-# ---------- Analytics topic hint ----------
 def load_hint():
     if HINT_FILE.exists():
         try:
@@ -309,7 +308,6 @@ def hint_text_for_prompt():
     return "\n\n".join(parts)
 
 
-# ---------- Groq script ----------
 def groq_json(user_prompt):
     key = os.environ.get("GROQ_API_KEY")
     if not key:
@@ -376,7 +374,9 @@ def build_script(history):
         "- For step scenes, ui_label is the 1 to 2 word text on the button the viewer clicks, "
         "all caps (for example: CREATE, SAVE, SEND, DOWNLOAD, CONNECT).\n"
         "- Hook title: max 6 words. Step titles: max 4 words.\n"
-        "- Body: max 12 words for hook, max 14 words for each step, max 16 words for outro.\n\n"
+        "- Body: max 12 words for hook, max 14 words for each step, max 16 words for outro.\n"
+        f"- The outro narration must end with a line that tells viewers to try {WEBSITE_NAME} "
+        "for free, for example: 'You can try a free invoice tool too, link in the description.'\n\n"
         "Return JSON with exactly these keys: title, description, tags, scenes.\n"
         "title: clickable YouTube title under 60 characters, no hashtags.\n"
         "description: 2 short sentences, then 3 relevant hashtags.\n"
@@ -405,7 +405,6 @@ def build_script(history):
     raise SystemExit("Motion script 3 tries mein bhi sahi nahi bana")
 
 
-# ---------- Voice ----------
 async def _tts(text, path):
     rate = f"+{round((VOICE_SPEED - 1) * 100)}%"
     await edge_tts.Communicate(text, config.VOICE, rate=rate).save(str(path))
@@ -435,7 +434,6 @@ def audio_seconds(path):
     return float(out)
 
 
-# ---------- Render ----------
 def render(scenes, durs, audio, pal, out_path):
     starts, acc = [], 0.0
     for dd in durs:
@@ -485,7 +483,6 @@ def render(scenes, durs, audio, pal, out_path):
         raise SystemExit("ffmpeg render fail hua")
 
 
-# ---------- Main ----------
 def load_history():
     if HISTORY.exists():
         return json.loads(HISTORY.read_text(encoding="utf-8"))
@@ -522,6 +519,7 @@ def main():
     render(scenes, durs, audio, pal, folder / "short.mp4")
 
     desc = str(data.get("description", "")).strip()
+    desc += f"\n\nFree tool: https://{WEBSITE_URL}"
     if "#Shorts" not in desc:
         desc = desc + "\n\n#Shorts"
     meta = {"title": data["title"][:100], "description": desc, "tags": data.get("tags", [])}
