@@ -274,7 +274,12 @@ def scene_outro(d, sc, t, pal):
     center(d, "Follow for more AI tools for freelancers", font(56), 360, GREY)
     if t > 1.0:
         center(d, "Try our free invoice tool at", font(50), 480, GREY)
-        center(d, WEBSITE_URL, font(56), 550, pal["accent"], stroke=4)
+        url_font = font(56)
+        url_w, _ = text_size(d, WEBSITE_URL, url_font)
+        while url_w > W - 160 and url_font.size > 24:
+            url_font = font(url_font.size - 2)
+            url_w, _ = text_size(d, WEBSITE_URL, url_font)
+        center(d, WEBSITE_URL, url_font, 550, pal["accent"], stroke=4)
         center(d, "No signup. Create and print invoices in minutes.", font(42), 640, GREY)
     if t > 1.8:
         x0 = (W - 520) // 2
@@ -282,10 +287,6 @@ def scene_outro(d, sc, t, pal):
         f = font(56)
         w, h = text_size(d, "SUBSCRIBE", f)
         d.text((x0 + (520 - w) // 2, 760 + (110 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
-
-
-SCENE_FN = {"chapter": scene_chapter, "point": scene_point, "outro": scene_outro}
-
 
 def groq_json(user_prompt):
     key = os.environ.get("GROQ_API_KEY")
