@@ -288,6 +288,10 @@ def scene_outro(d, sc, t, pal):
         w, h = text_size(d, "SUBSCRIBE", f)
         d.text((x0 + (520 - w) // 2, 760 + (110 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
+
+SCENE_FN = {"chapter": scene_chapter, "point": scene_point, "outro": scene_outro}
+
+
 def groq_json(user_prompt):
     key = os.environ.get("GROQ_API_KEY")
     if not key:
@@ -304,18 +308,23 @@ def groq_json(user_prompt):
     }
     for attempt in range(1, 8):
         time.sleep(config.API_PAUSE_SECONDS)
-        r = requests.post(GROQ_URL, headers={"Authorization": f"Bearer {key}"}, json=payload, timeout=240)
-        if r.status_code == 429:
+        try:
+            r = requests.post(GROQ_URL, headers={"Authorization": f"Bearer {key}"}, json=payload, timeout=240)
+        except requests.RequestException as e:
+            print(f"   Groq connection error ({type(e).__name__}), dobara try kar raha hoon... ({attempt})")
+            time.sleep(20)
+            continue
+        if r.status_code in (429, 500, 502, 503, 504, 522, 524):
             m = re.search(r"try again in ([\d.]+)s", r.text)
-            wait = min((float(m.group(1)) if m else 15.0) + 3, 90)
-            print(f"   Groq rate limit, {wait:.0f} sec ruk raha hoon... ({attempt})")
+            wait = min((float(m.group(1)) if m else 20.0) + 3, 90)
+            print(f"   Groq {r.status_code}, {wait:.0f} sec ruk kar dobara try kar raha hoon... ({attempt})")
             time.sleep(wait)
             continue
         if r.status_code == 400 and "json_validate_failed" in r.text:
             print(f"   Groq ka JSON kharab tha, dobara try kar raha hoon... ({attempt})")
             continue
         if r.status_code != 200:
-            raise SystemExit(f"Groq error {r.status_code}: {r.text}")
+            raise SystemExit(f"Groq error {r.status_code}: {r.text[:300]}")
         try:
             return json.loads(r.json()["choices"][0]["message"]["content"])
         except (json.JSONDecodeError, KeyError, IndexError):
@@ -451,173 +460,4 @@ def make_voice(text, path):
         asyncio.run(_tts(text, path))
     except Exception as e:
         print(f"   Edge TTS fail ({type(e).__name__}), gTTS use ho raha hai")
-        raw = path.with_name("raw_" + path.name)
-        gTTS(text=text, lang="en", tld="com").save(str(raw))
-        subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
-             "-filter:a", f"atempo={VOICE_SPEED}", str(path)],
-            check=True,
-        )
-        raw.unlink()
-
-
-def audio_seconds(path):
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "csv=p=0", str(path)],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    return float(out)
-
-
-def render(scenes, durs, audio, pal, out_path):
-    starts, acc = [], 0.0
-    for dd in durs:
-        starts.append(acc)
-        acc += dd
-    total = acc
-    frames = int(total * FPS)
-    bg = make_bg(pal)
-
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
-        "-i", str(audio),
-        "-map", "0:v", "-map", "1:a",
-        "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-profile:v", "high", "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
-        "-c:a", "aac", "-b:a", "192k", "-shortest",
-        str(out_path),
-    ]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-
-    for f in range(frames):
-        T = f / FPS
-        i = bisect.bisect_right(starts, T) - 1
-        i = max(0, min(i, len(scenes) - 1))
-        t = T - starts[i]
-        dur = durs[i]
-        sc = scenes[i]
-
-        img = bg.copy()
-        d = ImageDraw.Draw(img)
-        SCENE_FN[sc["type"]](d, sc, t, pal)
-        draw_caption(d, sc["narration"], t, dur)
-        draw_chrome(d, pal, T / total)
-
-        k_ = min(1.0, t / 0.35, (dur - t) / 0.35)
-        if k_ < 1.0:
-            img = ImageEnhance.Brightness(img).enhance(max(0.0, k_))
-
-        proc.stdin.write(img.tobytes())
-
-    proc.stdin.close()
-    proc.wait()
-    if proc.returncode != 0:
-        raise SystemExit("ffmpeg render fail hua")
-    return starts
-
-
-def make_thumb(path, pal, text):
-    w, h = 1280, 720
-    img = make_bg(pal, w, h)
-    d = ImageDraw.Draw(img)
-    icon_bolt(d, 1020, 340, 190, pal["accent"])
-    tf = font(40)
-    tw, th = text_size(d, "AI TOOLS", tf)
-    d.rounded_rectangle([60, 60, 60 + tw + 40, 60 + th + 26], radius=14, fill=RED)
-    d.text((80, 70), "AI TOOLS", font=tf, fill=WHITE)
-    f = font(120)
-    lines = wrap(d, str(text).upper(), f, 900)
-    y = 270 if len(lines) <= 2 else 200
-    for i, line in enumerate(lines):
-        color = pal["accent"] if i == len(lines) - 1 else WHITE
-        d.text((60, y), line, font=f, fill=color, stroke_width=10, stroke_fill=DARK)
-        y += 135
-    img.save(path, "JPEG", quality=93)
-
-
-def load_history():
-    if HISTORY.exists():
-        return json.loads(HISTORY.read_text(encoding="utf-8"))
-    return {"titles": []}
-
-
-def main():
-    OUTPUT.mkdir(exist_ok=True)
-    history = load_history()
-
-    print("Outline bana raha hoon...")
-    outline = build_outline(history)
-    pal = palette_for(outline["title"])
-
-    chapter_data = []
-    prev_text = ""
-    for i in range(CHAPTER_COUNT):
-        is_last = i == CHAPTER_COUNT - 1
-        print(f"Chapter {i + 1}/{CHAPTER_COUNT} likh raha hoon...")
-        ch = build_chapter(outline, i, prev_text, is_last)
-        chapter_data.append(ch)
-        prev_text = str(ch["chapter_narration"]) + " " + " ".join(str(p["narration"]) for p in ch["points"])
-
-    scenes = []
-    n = len(chapter_data)
-    for ci, (oc, cd) in enumerate(zip(outline["chapters"], chapter_data)):
-        scenes.append({"type": "chapter", "index": ci, "total": n, "num": f"{ci + 1:02d}",
-                       "title": str(oc["title"]), "narration": str(cd["chapter_narration"])})
-        for p in cd["points"]:
-            scenes.append({"type": "point", "chapter": ci + 1, "title": str(p["title"]),
-                           "body": str(p["body"]), "icon": p.get("icon", "check"),
-                           "ui_label": str(p.get("ui_label") or "NEXT")[:18],
-                           "narration": str(p["narration"])})
-        if ci == n - 1:
-            scenes.append({"type": "outro", "narration": str(cd["outro_narration"])})
-
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder = OUTPUT / f"LONG_MOTION_{stamp}_{slugify(outline['title'])}"
-    folder.mkdir(parents=True, exist_ok=True)
-
-    full = " ".join(s["narration"] for s in scenes)
-    (folder / "script.txt").write_text(full, encoding="utf-8")
-    print(f"Total narration: {word_count(full)} words")
-
-    print("Voice bana raha hoon...")
-    audio = folder / "voice.mp3"
-    make_voice(full, audio)
-    total = audio_seconds(audio)
-
-    counts = [max(1, word_count(s["narration"])) for s in scenes]
-    durs = [total * c / sum(counts) for c in counts]
-
-    print("Video render ho raha hai (high quality mein 40 se 60 minute lag sakte hain)...")
-    starts = render(scenes, durs, audio, pal, folder / "video.mp4")
-
-    print("Thumbnail bana raha hoon...")
-    make_thumb(folder / "thumbnail.jpg", pal, outline["thumbnail_text"])
-
-    chapter_times = []
-    for idx, s in enumerate(scenes):
-        if s["type"] == "chapter":
-            chapter_times.append({"time": fmt_time(starts[idx]), "name": s["title"]})
-    chapter_lines = "\n".join(f"{c['time']} {c['name']}" for c in chapter_times)
-
-    desc = str(outline["description"]).strip()
-    desc += "\n\nChapters:\n" + chapter_lines
-    desc += f"\n\nFree invoice tool (no signup): https://{WEBSITE_URL}"
-    desc += "\n\nThis video is general information. Check each tool's own pricing page before you sign up."
-    meta = {
-        "title": str(outline["title"])[:100],
-        "thumbnail_text": outline["thumbnail_text"],
-        "description": desc,
-        "tags": outline.get("tags", []),
-        "chapters": chapter_times,
-    }
-    (folder / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    history["titles"].append(outline["title"])
-    HISTORY.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Ready: {folder}")
-
-
-if __name__ == "__main__":
-    main()
+        raw = path.with_name("raw_"
