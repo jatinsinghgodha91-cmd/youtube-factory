@@ -23,6 +23,7 @@ OUTPUT = ROOT / config.OUTPUT_DIR
 HISTORY = ROOT / "motion_long_history.json"
 HINT_FILE = ROOT / "topic_hint.json"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+WEBSITE_URL = "jatinsinghgodha91-cmd.github.io/invoice-tool"
 
 W, H = 1920, 1080
 FPS = 24
@@ -57,7 +58,6 @@ Narration is read aloud by a text-to-speech voice: spoken words only, no stage d
 Never invent prices, features or statistics. Always return valid JSON only."""
 
 
-# ---------- Basic helpers ----------
 def font(size):
     if size not in _fonts:
         path = next((p for p in FONT_CANDIDATES if Path(p).exists()), None)
@@ -132,7 +132,6 @@ def card(d, x, y, w, h):
     d.rounded_rectangle([x, y, x + w, y + h], radius=26, fill=CARD, outline=CARD_EDGE, width=3)
 
 
-# ---------- Icons ----------
 def icon_check(d, cx, cy, s, c):
     d.line([(cx - s * 0.5, cy), (cx - s * 0.15, cy + s * 0.42), (cx + s * 0.5, cy - s * 0.38)],
            fill=c, width=max(4, int(s * 0.2)), joint="curve")
@@ -186,7 +185,6 @@ ICONS = {"check": icon_check, "bolt": icon_bolt, "clock": icon_clock, "dollar": 
          "gear": icon_gear, "star": icon_star, "arrow": icon_arrow}
 
 
-# ---------- Screen mockup (tutorial look) ----------
 def draw_mockup(d, x, y, w, h, pal, label, progress):
     d.rounded_rectangle([x, y, x + w, y + h], radius=22, fill=(246, 248, 252), outline=(190, 198, 216), width=3)
     d.rounded_rectangle([x, y, x + w, y + 52], radius=22, fill=(222, 228, 240))
@@ -210,7 +208,6 @@ def draw_mockup(d, x, y, w, h, pal, label, progress):
     d.text((x + (w - tw) // 2, by + (66 - th) // 2 - 4), text, font=f, fill=DARK)
 
 
-# ---------- Chrome, caption, scenes ----------
 def draw_chrome(d, pal, progress):
     d.text((120, 60), "AI TOOLS", font=font(34), fill=pal["accent"])
     d.rectangle([0, H - 12, W, H], fill=TRACK)
@@ -273,21 +270,23 @@ def scene_point(d, sc, t, pal):
 
 def scene_outro(d, sc, t, pal):
     p = ease(t / 0.8)
-    center(d, "SAVE THIS", font(120), 260 + int((1 - p) * 40), pal["accent"], stroke=8)
-    center(d, "Follow for more AI tools for freelancers", font(56), 430, GREY)
-    center(d, "Check each tool's pricing page before you sign up", font(46), 510, GREY)
+    center(d, "SAVE THIS", font(120), 200 + int((1 - p) * 40), pal["accent"], stroke=8)
+    center(d, "Follow for more AI tools for freelancers", font(56), 360, GREY)
+    if t > 1.0:
+        center(d, "Try our free invoice tool at", font(50), 480, GREY)
+        center(d, WEBSITE_URL, font(56), 550, pal["accent"], stroke=4)
+        center(d, "No signup. Create and print invoices in minutes.", font(42), 640, GREY)
     if t > 1.8:
         x0 = (W - 520) // 2
-        d.rounded_rectangle([x0, 740, x0 + 520, 850], radius=55, fill=RED)
+        d.rounded_rectangle([x0, 760, x0 + 520, 870], radius=55, fill=RED)
         f = font(56)
         w, h = text_size(d, "SUBSCRIBE", f)
-        d.text((x0 + (520 - w) // 2, 740 + (110 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
+        d.text((x0 + (520 - w) // 2, 760 + (110 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
 
 
 SCENE_FN = {"chapter": scene_chapter, "point": scene_point, "outro": scene_outro}
 
 
-# ---------- Groq ----------
 def groq_json(user_prompt):
     key = os.environ.get("GROQ_API_KEY")
     if not key:
@@ -323,7 +322,6 @@ def groq_json(user_prompt):
     raise SystemExit("Groq 7 tries mein bhi valid JSON nahi de paya.")
 
 
-# ---------- Analytics topic hint ----------
 def load_hint():
     if HINT_FILE.exists():
         try:
@@ -350,7 +348,6 @@ def hint_text_for_prompt():
     return "\n\n".join(parts)
 
 
-# ---------- Outline and chapters ----------
 def build_outline(history):
     past = history["titles"][-100:]
     avoid = "\n".join(f"- {t}" for t in past) or "- (none yet)"
@@ -405,8 +402,9 @@ def build_chapter(outline, idx, prev_text, is_last):
     titles = [c["title"] for c in outline["chapters"]]
     ch = outline["chapters"][idx]
     outro_line = (
-        '"outro_narration": 25 to 40 words. Summarize the key takeaways of the whole video '
-        "and ask viewers to comment one question."
+        '"outro_narration": 25 to 40 words. Summarize the key takeaways of the whole video, '
+        "ask viewers to comment one question, and tell them to try our free invoice tool at "
+        f"{WEBSITE_URL} (no signup needed)."
         if is_last else ""
     )
     prompt = f"""Video title: {outline['title']}
@@ -442,7 +440,6 @@ Spoken words only. No headings, no emojis, no stage directions, no statistics.""
     raise SystemExit(f"Chapter {idx + 1} 3 tries mein bhi sahi nahi bana")
 
 
-# ---------- Voice ----------
 async def _tts(text, path):
     rate = f"+{round((VOICE_SPEED - 1) * 100)}%"
     await edge_tts.Communicate(text, config.VOICE, rate=rate).save(str(path))
@@ -472,7 +469,6 @@ def audio_seconds(path):
     return float(out)
 
 
-# ---------- Render ----------
 def render(scenes, durs, audio, pal, out_path):
     starts, acc = [], 0.0
     for dd in durs:
@@ -521,7 +517,6 @@ def render(scenes, durs, audio, pal, out_path):
     return starts
 
 
-# ---------- Thumbnail ----------
 def make_thumb(path, pal, text):
     w, h = 1280, 720
     img = make_bg(pal, w, h)
@@ -541,7 +536,6 @@ def make_thumb(path, pal, text):
     img.save(path, "JPEG", quality=93)
 
 
-# ---------- Main ----------
 def load_history():
     if HISTORY.exists():
         return json.loads(HISTORY.read_text(encoding="utf-8"))
@@ -608,6 +602,7 @@ def main():
 
     desc = str(outline["description"]).strip()
     desc += "\n\nChapters:\n" + chapter_lines
+    desc += f"\n\nFree invoice tool (no signup): https://{WEBSITE_URL}"
     desc += "\n\nThis video is general information. Check each tool's own pricing page before you sign up."
     meta = {
         "title": str(outline["title"])[:100],
