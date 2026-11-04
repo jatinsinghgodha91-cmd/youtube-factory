@@ -270,17 +270,18 @@ def scene_outro(d, sc, t, pal):
         y += 68
     if t > 1.0:
         center(d, "Try it free at", font(44), 800, GREY)
-        center(d, WEBSITE_URL, font(50), 860, pal["accent"], stroke=4)
+        url_font = font(40)
+        url_w, _ = text_size(d, WEBSITE_URL, url_font)
+        while url_w > W - 120 and url_font.size > 20:
+            url_font = font(url_font.size - 2)
+            url_w, _ = text_size(d, WEBSITE_URL, url_font)
+        center(d, WEBSITE_URL, url_font, 860, pal["accent"], stroke=3)
     if t > 1.8:
         x0 = (W - 480) // 2
         d.rounded_rectangle([x0, 1200, x0 + 480, 1290], radius=45, fill=RED)
         f = font(48)
         w, h = text_size(d, "SUBSCRIBE", f)
         d.text((x0 + (480 - w) // 2, 1200 + (90 - h) // 2 - 6), "SUBSCRIBE", font=f, fill=WHITE)
-
-
-SCENE_FN = {"hook": scene_hook, "step": scene_step, "outro": scene_outro}
-
 
 def load_hint():
     if HINT_FILE.exists():
