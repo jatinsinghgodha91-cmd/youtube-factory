@@ -55,6 +55,15 @@ SYSTEM_PROMPT = """You write short, clear, accurate YouTube Shorts tutorial scri
 Narration is read aloud by a text-to-speech voice: spoken words only.
 Never invent prices, features or statistics. Always return valid JSON only."""
 
-
 def font(size):
     if size not in _fonts:
+        path = None
+        for p in FONT_CANDIDATES:
+            if Path(p).exists():
+                path = p
+                break
+        if path:
+            _fonts[size] = ImageFont.truetype(path, size)
+        else:
+            _fonts[size] = ImageFont.load_default(size=size)
+    return _fonts[size]
