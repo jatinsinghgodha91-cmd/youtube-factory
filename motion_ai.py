@@ -67,3 +67,5 @@ def font(size):
         else:
             _fonts[size] = ImageFont.load_default(size=size)
     return _fonts[size]
+if __name__ == "__main__":
+    main()
