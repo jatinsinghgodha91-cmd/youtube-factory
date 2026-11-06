@@ -395,7 +395,8 @@ def build_script(history):
         f"- The outro narration must end with a line that tells viewers to try {WEBSITE_NAME} "
         "for free, for example: 'You can try a free invoice tool too, link in the description.'\n\n"
         "Return JSON with exactly these keys: title, description, tags, scenes.\n"
-        "title: clickable YouTube title under 60 characters, no hashtags.\n"
+        "title: a clickable YouTube title under 60 characters, no hashtags. Start with a benefit or a number "
+        "(for example: 'Save 2 Hours on Proposals with AI'). Use strong words like Free, Instant, Save, Fast.\n"
         "description: 2 short sentences, then 3 relevant hashtags.\n"
         "tags: a list of 8 to 12 tags.\n"
         "scenes: a list of exactly 5 objects in this order: hook, step, step, step, outro.\n"
@@ -443,109 +444,3 @@ def make_voice(text, path):
 
 
 def audio_seconds(path):
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "csv=p=0", str(path)],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    return float(out)
-
-
-def render(scenes, durs, audio, pal, out_path):
-    starts, acc = [], 0.0
-    for dd in durs:
-        starts.append(acc)
-        acc += dd
-    total = acc
-    frames = int(total * FPS)
-    bg = make_bg(pal)
-
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
-        "-i", str(audio),
-        "-map", "0:v", "-map", "1:a",
-        "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-profile:v", "high", "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
-        "-c:a", "aac", "-b:a", "192k", "-shortest", "-t", str(MAX_SECONDS),
-        str(out_path),
-    ]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-
-    for f in range(frames):
-        T = f / FPS
-        i = 0
-        for k in range(len(starts)):
-            if T >= starts[k]:
-                i = k
-        t = T - starts[i]
-        dur = durs[i]
-        sc = scenes[i]
-
-        img = bg.copy()
-        d = ImageDraw.Draw(img)
-        SCENE_FN[sc["type"]](d, sc, t, pal)
-        draw_caption(d, sc["narration"], t, dur)
-        draw_header(d, pal, T / total)
-
-        k_ = min(1.0, t / 0.3, (dur - t) / 0.3)
-        if k_ < 1.0:
-            img = ImageEnhance.Brightness(img).enhance(max(0.0, k_))
-
-        proc.stdin.write(img.tobytes())
-
-    proc.stdin.close()
-    proc.wait()
-    if proc.returncode != 0:
-        raise SystemExit("ffmpeg render fail hua")
-
-
-def load_history():
-    if HISTORY.exists():
-        return json.loads(HISTORY.read_text(encoding="utf-8"))
-    return {"titles": []}
-
-
-def main():
-    OUTPUT.mkdir(exist_ok=True)
-    history = load_history()
-
-    print("Script bana raha hoon...")
-    data = build_script(history)
-    scenes = data["scenes"]
-    pal = palette_for(data["title"])
-
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder = OUTPUT / f"SHORT_MOTION_{stamp}_{slugify(data['title'])}"
-    folder.mkdir(parents=True, exist_ok=True)
-
-    full = " ".join(s["narration"] for s in scenes)
-    (folder / "script.txt").write_text(full, encoding="utf-8")
-
-    print("Voice bana raha hoon...")
-    audio = folder / "voice.mp3"
-    make_voice(full, audio)
-    total = audio_seconds(audio)
-    if total > MAX_SECONDS:
-        print(f"Warning: voice {total:.0f} sec ki hai, Shorts ki limit 60 sec hai.")
-
-    counts = [max(1, len(s["narration"].split())) for s in scenes]
-    durs = [total * c / sum(counts) for c in counts]
-
-    print("Video render ho raha hai...")
-    render(scenes, durs, audio, pal, folder / "short.mp4")
-
-    desc = str(data.get("description", "")).strip()
-    desc += f"\n\nFree tool: https://{WEBSITE_URL}"
-    if "#Shorts" not in desc:
-        desc = desc + "\n\n#Shorts"
-    meta = {"title": data["title"][:100], "description": desc, "tags": data.get("tags", [])}
-    (folder / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    history["titles"].append(data["title"])
-    HISTORY.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Ready: {folder}")
-
-
-if __name__ == "__main__":
-    main()
