@@ -382,8 +382,9 @@ Rules:
 - Each chapter teaches one concrete thing the viewer can do this week.
 
 Return JSON with exactly these keys:
-"title": clickable YouTube title under 70 characters, no hashtags
-"thumbnail_text": 3 to 5 words, all caps, a bold promise
+"title": a clickable YouTube title under 70 characters, no hashtags. Start with a benefit or a number
+(for example: "Save 3 Hours a Week with These Free AI Tools"). Use strong words like Free, Instant, Save, Fast.
+"thumbnail_text": 3 to 4 words, all caps, must include a number or a clear benefit (for example: "SAVE 3 HOURS", "FREE AI TOOL").
 "description": 150 to 200 words: a short summary, then a subscribe call to action, then 3 hashtags
 "tags": a list of 15 to 20 tags
 "chapters": a list of exactly {CHAPTER_COUNT} objects, each with "title" (max 5 words) and "point" (one sentence)"""
@@ -617,9 +618,9 @@ def main():
             chapter_times.append({"time": fmt_time(starts[idx]), "name": s["title"]})
     chapter_lines = "\n".join(f"{c['time']} {c['name']}" for c in chapter_times)
 
-    desc = str(outline["description"]).strip()
+    desc = f"Free invoice tool, no signup: https://{WEBSITE_URL}\n\n"
+    desc += str(outline["description"]).strip()
     desc += "\n\nChapters:\n" + chapter_lines
-    desc += f"\n\nFree invoice tool (no signup): https://{WEBSITE_URL}"
     desc += "\n\nThis video is general information. Check each tool's own pricing page before you sign up."
     meta = {
         "title": str(outline["title"])[:100],
